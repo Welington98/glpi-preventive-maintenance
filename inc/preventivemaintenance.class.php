@@ -387,9 +387,17 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
         return false;
     }
 
-    // Definir valores padrão
-    // Set default values
-    $input['entities_id'] = $_SESSION['glpiactive_entity'] ?? 0;
+    // Definir valores padrão. entities_id só usa a entidade ativa da sessão
+    // como fallback quando o formulário não enviou nenhuma — nunca sobrescreve
+    // a entidade escolhida (bug anterior: sempre sobrescrevia, ignorando o
+    // que o usuário selecionou).
+    // Set default values. entities_id only falls back to the session's active
+    // entity when the form didn't send one — never overrides the chosen
+    // entity (previous bug: it always overwrote it, ignoring what the user
+    // had selected).
+    if (!isset($input['entities_id']) || $input['entities_id'] === '') {
+        $input['entities_id'] = $_SESSION['glpiactive_entity'] ?? 0;
+    }
     $input['is_recursive'] = 0;
     // Checkbox não envia nada quando desmarcado; normaliza para 0/1.
     // Checkbox sends nothing when unchecked; normalize to 0/1.

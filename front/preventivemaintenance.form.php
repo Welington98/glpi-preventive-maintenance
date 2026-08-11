@@ -254,7 +254,11 @@ if (isset($_POST['add'])) {
             'groups_id' => (int)($_POST['groups_id'] ?? 0),
             'items_id' => $items_id,
             'itemtype' => $itemtype,
-            'last_maintenance_date' => $_POST['last_maintenance_date'] ?? null,
+            // Campo opcional: string vazia (não ausente) quebra a coluna DATE em
+            // modo estrito do MySQL — precisa virar null explicitamente.
+            // Optional field: an empty string (not absent) breaks the DATE column
+            // under MySQL strict mode — needs to become an explicit null.
+            'last_maintenance_date' => !empty($_POST['last_maintenance_date']) ? $_POST['last_maintenance_date'] : null,
             'next_maintenance_date' => $_POST['next_maintenance_date'],
             'maintenance_interval' => 30,
             'is_recurring' => isset($_POST['is_recurring']) ? 1 : 0,
@@ -315,6 +319,15 @@ $entity = new Entity();
 // Busca apenas as entidades ativas da sessão do usuário
 // Finds only active entities from user session
 $entities = $entity->find(['id' => $_SESSION['glpiactiveentities']], 'completename ASC');
+
+// Mapa nome completo -> id, usado pelo campo de busca de entidade (evita um
+// <select> gigante quando há muitas entidades).
+// Full name -> id map, used by the entity search field (avoids a giant
+// <select> when there are many entities).
+$entities_name_to_id = [];
+foreach ($entities as $ent) {
+    $entities_name_to_id[$ent['completename']] = (int)$ent['id'];
+}
 
 // Tipos de item permitidos e seus rótulos
 // Allowed item types and their labels
@@ -588,14 +601,17 @@ Html::header(
                     </div>
                     
                     <div class='form-section'>
-                        <label for='entities_id_select'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
-                        <select name='entities_id_select' id='entities_id_select' class='form-select' required>
-                            <option value=''><?php echo __('Selecione uma entidade'); ?></option>
+                        <label for='entities_id_search'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
+                        <input type='text' id='entities_id_search' class='form-control' list='entities_datalist'
+                               autocomplete='off' placeholder='<?php echo __('Digite para buscar uma entidade'); ?>'
+                               value="<?php echo $is_edit ? htmlspecialchars(array_search((int)$item_data['entities_id'], $entities_name_to_id, true) ?: '') : ''; ?>">
+                        <datalist id='entities_datalist'>
                             <?php foreach ($entities as $ent) {
-                                $selected = ($is_edit && $item_data['entities_id'] == $ent['id']) ? 'selected' : '';
-                                echo "<option value='{$ent['id']}' $selected>{$ent['completename']}</option>";
+                                echo "<option value='" . htmlspecialchars($ent['completename']) . "'></option>";
                             } ?>
-                        </select>
+                        </datalist>
+                        <input type='hidden' id='entities_id_select' value="<?php echo $is_edit ? (int)$item_data['entities_id'] : ''; ?>">
+                        <small class="text-muted d-block mt-1" id="entities_id_search_feedback"></small>
                     </div>
                     
                     <div class='d-flex justify-content-end mt-4'>
@@ -794,8 +810,27 @@ Html::header(
             const blockedItems = <?php echo json_encode($blocked_items); ?>;
             const currentEditItemtype = <?php echo json_encode($is_edit ? $item_data['itemtype'] : null); ?>;
             const currentEditItemsId = <?php echo json_encode($is_edit ? (int)$item_data['items_id'] : null); ?>;
+            const entitiesNameToId = <?php echo json_encode($entities_name_to_id, JSON_UNESCAPED_UNICODE); ?>;
             
             $(document).ready(function() {
+                // Campo de busca de entidade: resolve o texto digitado (que precisa
+                // bater exatamente com uma opção da lista de sugestões nativa do
+                // navegador) para o ID correspondente, guardado no campo oculto.
+                // Entity search field: resolves the typed text (which must match
+                // exactly one of the browser's native suggestion list options) to
+                // the corresponding ID, stored in the hidden field.
+                $('#entities_id_search').on('input change', function() {
+                    const typed = $(this).val();
+                    const feedback = $('#entities_id_search_feedback');
+                    if (entitiesNameToId.hasOwnProperty(typed)) {
+                        $('#entities_id_select').val(entitiesNameToId[typed]);
+                        feedback.text('');
+                    } else {
+                        $('#entities_id_select').val('');
+                        feedback.text(typed ? '<?php echo __('Selecione uma entidade da lista de sugestões.'); ?>' : '');
+                    }
+                });
+
                 // Configuração de localização para português
                 // Portuguese localization setup
                 $.datepicker.regional['pt-BR'] = {
@@ -922,26 +957,26 @@ Html::header(
                     // Se estiver editando, configura os valores iniciais
                     // If editing, sets initial values
                     const entityId = <?php echo $item_data['entities_id']; ?>;
-                    const entityName = $(`#entities_id_select option[value='${entityId}']`).text();
-                    
+                    const entityName = $('#entities_id_search').val();
+
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
                     $('#selected-entity-id').text(entityId);
-                    
+
                     $('#step1').hide();
                     $('#step2').show();
                 <?php } ?>
-                
+
                 // Evento do botão Próximo
                 // Next button event
                 $('#nextButton').click(function() {
-                    if (!$('#entities_id_select').val()) {
-                        alert('<?php echo __("Selecione uma entidade"); ?>');
+                    const entityId = $('#entities_id_select').val();
+                    if (!entityId) {
+                        alert('<?php echo __("Selecione uma entidade válida da lista de sugestões"); ?>');
                         return;
                     }
 
-                    const entityId = $('#entities_id_select').val();
-                    const entityName = $('#entities_id_select option:selected').text();
+                    const entityName = $('#entities_id_search').val();
 
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
@@ -1037,33 +1072,28 @@ Html::header(
                     }
                 });
                 
-                // Processa o formulário de seleção de perfis
-                // Processes profile selection form
+                // Processa o formulário de seleção de perfis. Envio nativo (sem
+                // AJAX) — o GLPI 11 valida o token CSRF de um jeito diferente
+                // para requisições AJAX (header em vez do campo do formulário),
+                // que o $.ajax() abaixo não enviava, sempre resultando em 403.
+                // O formulário principal já funciona via POST normal, então
+                // seguimos o mesmo caminho aqui.
+                // Processes profile selection form. Native submit (no AJAX) —
+                // GLPI 11 validates the CSRF token differently for AJAX requests
+                // (a header instead of the form field), which the $.ajax() below
+                // never sent, always resulting in a 403. The main form already
+                // works via a normal POST, so we follow the same path here.
                 $('#profileSelectionForm').submit(function(e) {
-                    e.preventDefault();
-                    
                     // Verifica se pelo menos um perfil foi selecionado
                     // Checks if at least one profile was selected
                     if ($('#profileSelectionForm input[name="profiles[]"]:checked').length === 0) {
+                        e.preventDefault();
                         alert('<?php echo __("Selecione pelo menos um perfil técnico"); ?>');
-                        return;
                     }
-                    
-                    // Envia o formulário via AJAX
-                    // Submits form via AJAX
-                    $.ajax({
-                        url: window.location.href,
-                        type: 'POST',
-                        data: $(this).serialize(),
-                        success: function(response) {
-                            // Recarrega a página para atualizar a lista de técnicos
-                            // Reloads page to update technicians list
-                            window.location.reload();
-                        },
-                        error: function() {
-                            alert('<?php echo __("Erro ao salvar a seleção de perfis"); ?>');
-                        }
-                    });
+                    // Caso contrário, deixa o navegador enviar o formulário
+                    // normalmente (POST + reload da página).
+                    // Otherwise, let the browser submit the form normally
+                    // (POST + page reload).
                 });
             });
             </script>
