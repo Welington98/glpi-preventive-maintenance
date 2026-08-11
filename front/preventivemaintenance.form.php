@@ -64,13 +64,11 @@
 include('../../../inc/includes.php');
 Session::checkRight('plugin_preventivemaintenance', CREATE);
 
-// Conexão manual com o banco de dados
-// Manual database connection
-$DB = new DB();
 $is_edit = isset($_GET['id']);
 $pm = new PluginPreventivemaintenancePreventivemaintenance();
 $item_data = [];
 $selected_entity_id = 0;
+$ticket_history = [];
 
 // Se estiver editando, carrega os dados existentes
 // If editing, loads existing data
@@ -82,6 +80,33 @@ if ($is_edit) {
     }
     $item_data = $pm->fields;
     $selected_entity_id = $item_data['entities_id'];
+
+    // Histórico de chamados já criados para esta manutenção (abertos e resolvidos)
+    // History of tickets already created for this maintenance (open and resolved)
+    global $DB;
+    $history_iterator = $DB->request([
+        'SELECT' => [
+            'glpi_tickets.id',
+            'glpi_tickets.name',
+            'glpi_tickets.status',
+            'glpi_plugin_preventivemaintenance_tickets.date_creation',
+            'glpi_plugin_preventivemaintenance_tickets.resolved_at',
+        ],
+        'FROM' => 'glpi_plugin_preventivemaintenance_tickets',
+        'INNER JOIN' => [
+            'glpi_tickets' => [
+                'ON' => [
+                    'glpi_plugin_preventivemaintenance_tickets' => 'ticket_id',
+                    'glpi_tickets' => 'id'
+                ]
+            ]
+        ],
+        'WHERE' => ['glpi_plugin_preventivemaintenance_tickets.maintenance_id' => $id],
+        'ORDER' => 'glpi_plugin_preventivemaintenance_tickets.date_creation DESC',
+    ]);
+    foreach ($history_iterator as $row) {
+        $ticket_history[] = $row;
+    }
 }
 
 // Busca todos os perfis disponíveis para seleção
@@ -114,6 +139,22 @@ foreach ($selected_profiles as $profile_name) {
     }
 }
 
+// Busca os grupos e modelos de chamado disponíveis para seleção.
+// Usa <select> simples em vez de Group::dropdown()/TicketTemplate::dropdown()
+// porque este assistente carrega jQuery/jQuery UI de um CDN à parte (necessário
+// para o datepicker customizado abaixo), o que quebra o select2 do GLPI usado
+// por esses dropdowns nesta página específica.
+// Finds available groups and ticket templates for selection.
+// Uses plain <select> instead of Group::dropdown()/TicketTemplate::dropdown()
+// because this wizard loads jQuery/jQuery UI from a separate CDN (needed for
+// the custom datepicker below), which breaks GLPI's select2 used by those
+// dropdowns on this specific page.
+$group = new Group();
+$all_groups = $group->find([], 'name ASC');
+
+$ticket_template = new TicketTemplate();
+$all_ticket_templates = $ticket_template->find([], 'name ASC');
+
 // Processamento do formulário quando enviado
 // Form processing when submitted
 if (isset($_POST['add'])) {
@@ -139,42 +180,57 @@ if (isset($_POST['add'])) {
             throw new Exception(__('A entidade selecionada não existe no sistema.'));
         }
 
-        // Validação do computador
-        // Computer validation
+        // Validação do tipo de item (contra a whitelist, antes de instanciar)
+        // Item type validation (against the whitelist, before instantiating)
+        if (!isset($_POST['itemtype']) || !in_array($_POST['itemtype'], PluginPreventivemaintenancePreventivemaintenance::getAllowedItemtypes(), true)) {
+            throw new Exception(__('Selecione um tipo de item válido.'));
+        }
+        $itemtype = $_POST['itemtype'];
+
+        // Validação do item
+        // Item validation
         if (!isset($_POST['items_id']) || empty($_POST['items_id'])) {
-            throw new Exception(__('Selecione um computador válido.'));
+            throw new Exception(__('Selecione um item válido.'));
         }
 
-        $computer_id = (int)$_POST['items_id'];
-        $computer = new Computer();
-        if (!$computer->getFromDB($computer_id)) {
-            throw new Exception(__('Computador selecionado não encontrado.'));
+        $items_id = (int)$_POST['items_id'];
+        $item = new $itemtype();
+        if (!$item->getFromDB($items_id)) {
+            throw new Exception(__('Item selecionado não encontrado.'));
         }
 
-        // Verifica se o computador pertence à entidade
-        // Checks if computer belongs to entity
-        if ($computer->fields['entities_id'] != $selected_entity_id) {
-            throw new Exception(__('O computador selecionado não pertence à entidade escolhida.'));
+        // Verifica se o item pertence à entidade
+        // Checks if item belongs to entity
+        if ($item->fields['entities_id'] != $selected_entity_id) {
+            throw new Exception(__('O item selecionado não pertence à entidade escolhida.'));
         }
 
-        // Verifica se já existe manutenção para este computador
-        // Checks if maintenance already exists for this computer
+        // Verifica se já existe manutenção para este item (mesmo tipo + mesmo id)
+        // Checks if maintenance already exists for this item (same type + same id)
         $existing = $pm->find([
-            'items_id' => $computer_id,
-            'itemtype' => 'Computer'
+            'items_id' => $items_id,
+            'itemtype' => $itemtype
         ]);
-        
+
         if ($is_edit) {
             unset($existing[$id]);
         }
-        
+
         if (count($existing) > 0) {
             throw new Exception(sprintf(
-                __('Já existe uma manutenção cadastrada para o computador %s (ID: %d)'),
-                $computer->getName(),
-                $computer_id
+                __('Já existe uma manutenção cadastrada para o item %s (ID: %d)'),
+                $item->getName(),
+                $items_id
             ));
         }
+
+        // Resolve o valor de recorrência: "custom" usa o campo de quantidade
+        // personalizada de meses em vez de um preset fixo.
+        // Resolves the recurrence value: "custom" uses the custom month-count
+        // field instead of a fixed preset.
+        $recurrence_months = ($_POST['recurrence_months'] ?? '') === 'custom'
+            ? (int)($_POST['recurrence_months_custom'] ?? 0)
+            : (int)($_POST['recurrence_months'] ?? 3);
 
         // Prepara os dados para gravação
         // Prepares data for saving
@@ -183,11 +239,15 @@ if (isset($_POST['add'])) {
             'entities_id' => $selected_entity_id,
             'is_recursive' => 0,
             'technician_id' => (int)$_POST['technician_id'],
-            'items_id' => $computer_id,
-            'itemtype' => 'Computer',
+            'groups_id' => (int)($_POST['groups_id'] ?? 0),
+            'items_id' => $items_id,
+            'itemtype' => $itemtype,
             'last_maintenance_date' => $_POST['last_maintenance_date'] ?? null,
             'next_maintenance_date' => $_POST['next_maintenance_date'],
-            'maintenance_interval' => 30
+            'maintenance_interval' => 30,
+            'is_recurring' => isset($_POST['is_recurring']) ? 1 : 0,
+            'recurrence_months' => $recurrence_months,
+            'tickettemplates_id' => (int)($_POST['tickettemplates_id'] ?? 0),
         ];
 
         // Cálculo do intervalo de manutenção
@@ -199,62 +259,25 @@ if (isset($_POST['add'])) {
             $input['maintenance_interval'] = $interval;
         }
 
-        error_log("[DADOS] Input preparado: " . print_r($input, true));
-
-        // GRAVAÇÃO MANUAL NO BANCO DE DADOS
-        // MANUAL DATABASE SAVE
+        // GRAVAÇÃO VIA CommonDBTM (reaproveita a validação de prepareInputForAdd/Update)
+        // SAVE VIA CommonDBTM (reuses prepareInputForAdd/Update validation)
         if ($is_edit) {
             $input['id'] = $id;
-            
-            // Atualização manual
-            // Manual update
-            $query = "UPDATE glpi_plugin_preventivemaintenance_preventivemaintenances SET
-                      name = '".$DB->escape($input['name'])."',
-                      entities_id = ".(int)$input['entities_id'].",
-                      is_recursive = 0,
-                      technician_id = ".(int)$input['technician_id'].",
-                      items_id = ".(int)$input['items_id'].",
-                      itemtype = 'Computer',
-                      last_maintenance_date = ".(!empty($input['last_maintenance_date']) ? "'".$DB->escape($input['last_maintenance_date'])."'" : "NULL").",
-                      next_maintenance_date = '".$DB->escape($input['next_maintenance_date'])."',
-                      maintenance_interval = ".(int)$input['maintenance_interval']."
-                      WHERE id = ".(int)$input['id'];
-            
-            error_log("[QUERY] Update: " . $query);
-            $result = $DB->query($query);
-            
-            if (!$result) {
-                error_log("[ERRO] Query falhou: " . $DB->error());
-                throw new Exception(__('Erro ao atualizar no banco de dados.'));
+
+            if (!$pm->update($input)) {
+                // prepareInputForUpdate() já adiciona a mensagem de erro específica
+                // prepareInputForUpdate() already added the specific error message
+                Html::back();
             }
-            
+
             Session::addMessageAfterRedirect(__('Manutenção atualizada com sucesso!'), true, INFO);
         } else {
-            // Inserção manual
-            // Manual insert
-            $query = "INSERT INTO glpi_plugin_preventivemaintenance_preventivemaintenances
-                     (name, entities_id, is_recursive, technician_id, items_id, itemtype, 
-                      last_maintenance_date, next_maintenance_date, maintenance_interval)
-                      VALUES (
-                      '".$DB->escape($input['name'])."',
-                      ".(int)$input['entities_id'].",
-                      0,
-                      ".(int)$input['technician_id'].",
-                      ".(int)$input['items_id'].",
-                      'Computer',
-                      ".(!empty($input['last_maintenance_date']) ? "'".$DB->escape($input['last_maintenance_date'])."'" : "NULL").",
-                      '".$DB->escape($input['next_maintenance_date'])."',
-                      ".(int)$input['maintenance_interval']."
-                      )";
-            
-            error_log("[QUERY] Insert: " . $query);
-            $result = $DB->query($query);
-            
-            if (!$result) {
-                error_log("[ERRO] Query falhou: " . $DB->error());
-                throw new Exception(__('Erro ao gravar no banco de dados.'));
+            if (!$pm->add($input)) {
+                // prepareInputForAdd() já adiciona a mensagem de erro específica
+                // prepareInputForAdd() already added the specific error message
+                Html::back();
             }
-            
+
             Session::addMessageAfterRedirect(__('Manutenção criada com sucesso!'), true, INFO);
         }
 
@@ -281,22 +304,47 @@ $entity = new Entity();
 // Finds only active entities from user session
 $entities = $entity->find(['id' => $_SESSION['glpiactiveentities']], 'completename ASC');
 
-$computer = new Computer();
-$all_computers = $computer->find(['is_deleted' => 0], "name ASC");
-
-$existing_maintenances = $pm->find(['itemtype' => 'Computer']);
-$blocked_computers = [];
-foreach ($existing_maintenances as $maintenance) {
-    if ($is_edit && $maintenance['id'] == $item_data['id']) continue;
-    $blocked_computers[] = $maintenance['items_id'];
+// Tipos de item permitidos e seus rótulos
+// Allowed item types and their labels
+$allowed_itemtypes = PluginPreventivemaintenancePreventivemaintenance::getAllowedItemtypes();
+$itemtype_labels = [];
+foreach ($allowed_itemtypes as $type) {
+    $itemtype_labels[$type] = $type::getTypeName(1);
 }
 
-$available_computers = array_filter($all_computers, function($comp) use ($blocked_computers, $is_edit, $item_data) {
-    if ($is_edit && $comp['id'] == $item_data['items_id']) {
-        return true;
+// Carrega os itens de todos os tipos permitidos, marcados com seu itemtype.
+// Asset Definitions personalizadas nem sempre têm o campo is_deleted (depende
+// da capacidade "Deletable" configurada), então o filtro é aplicado só quando
+// a coluna existe.
+// Loads items of every allowed type, tagged with their itemtype. Custom Asset
+// Definitions don't always have an is_deleted field (depends on whether the
+// "Deletable" capacity is configured), so the filter only applies when the
+// column exists.
+global $DB;
+$all_items = [];
+foreach ($allowed_itemtypes as $type) {
+    $type_obj = new $type();
+    $condition = $DB->fieldExists($type_obj->getTable(), 'is_deleted') ? ['is_deleted' => 0] : [];
+    foreach ($type_obj->find($condition, "name ASC") as $row) {
+        $all_items[] = [
+            'id'           => $row['id'],
+            'name'         => $row['name'],
+            'entities_id'  => $row['entities_id'],
+            'itemtype'     => $type,
+        ];
     }
-    return !in_array($comp['id'], $blocked_computers);
-});
+}
+
+// Itens já vinculados a outra manutenção (chave itemtype|items_id, para não
+// confundir, por exemplo, um Computer #5 com um Monitor #5)
+// Items already linked to another maintenance record (itemtype|items_id key,
+// so e.g. Computer #5 is not confused with Monitor #5)
+$existing_maintenances = $pm->find([]);
+$blocked_items = [];
+foreach ($existing_maintenances as $maintenance) {
+    if ($is_edit && $maintenance['id'] == $item_data['id']) continue;
+    $blocked_items[] = $maintenance['itemtype'] . '|' . $maintenance['items_id'];
+}
 
 $token = Session::getNewCSRFToken();
 
@@ -563,10 +611,10 @@ Html::header(
                     </div>
                     
                     <div class='form-section'>
-                        <label for='technician_id'><?php echo __('Técnico Responsável'); ?> <span class='required'>*</span></label>
-                        <select name='technician_id' id='technician_id' class='form-select' required>
+                        <label for='technician_id'><?php echo __('Técnico Responsável'); ?></label>
+                        <select name='technician_id' id='technician_id' class='form-select'>
                             <option value=''><?php echo __('Selecione um técnico responsável'); ?></option>
-                            <?php 
+                            <?php
                             foreach ($technicians as $id => $name) {
                                 $selected = ($is_edit && $item_data['technician_id'] == $id) ? 'selected' : '';
                                 echo "<option value='{$id}' {$selected}>{$name}</option>";
@@ -574,15 +622,43 @@ Html::header(
                             ?>
                         </select>
                     </div>
-                    
+
                     <div class='form-section'>
-                        <label for='items_id'><?php echo __('Computador'); ?> <span class='required'>*</span></label>
+                        <label for='groups_id'><?php echo __('Grupo Responsável'); ?></label>
+                        <select name='groups_id' id='groups_id' class='form-select'>
+                            <option value='0'><?php echo __('Selecione um grupo responsável'); ?></option>
+                            <?php
+                            foreach ($all_groups as $grp) {
+                                $selected = ($is_edit && ($item_data['groups_id'] ?? 0) == $grp['id']) ? 'selected' : '';
+                                echo "<option value='{$grp['id']}' {$selected}>{$grp['name']}</option>";
+                            }
+                            ?>
+                        </select>
+                        <small class="text-muted d-block mt-1">
+                            <?php echo __('Pode ser usado no lugar do técnico ou junto com ele — o grupo costuma ser mais estável ao longo do tempo.'); ?>
+                        </small>
+                    </div>
+
+                    <div class='form-section'>
+                        <label for='itemtype'><?php echo __('Tipo de Item'); ?> <span class='required'>*</span></label>
+                        <select name='itemtype' id='itemtype' class='form-select' required>
+                            <?php foreach ($itemtype_labels as $type => $label) {
+                                $selected = ($is_edit && $item_data['itemtype'] == $type)
+                                    || (!$is_edit && $type === 'Computer') ? 'selected' : '';
+                                echo "<option value='{$type}' $selected>{$label}</option>";
+                            } ?>
+                        </select>
+                    </div>
+
+                    <div class='form-section'>
+                        <label for='items_id'><?php echo __('Item'); ?> <span class='required'>*</span></label>
                         <select name='items_id' id='items_id' class='form-select' required>
-                            <option value=''><?php echo __('Selecione um computador'); ?></option>
-                            <?php 
-                            if ($is_edit) {
-                                $computer->getFromDB($item_data['items_id']);
-                                echo "<option value='{$item_data['items_id']}' selected>{$computer->getName()}</option>";
+                            <option value=''><?php echo __('Selecione um item'); ?></option>
+                            <?php
+                            if ($is_edit && in_array($item_data['itemtype'], $allowed_itemtypes, true)) {
+                                $edit_item = new $item_data['itemtype']();
+                                $edit_item->getFromDB($item_data['items_id']);
+                                echo "<option value='{$item_data['items_id']}' selected>{$edit_item->getName()}</option>";
                             }
                             ?>
                         </select>
@@ -597,11 +673,59 @@ Html::header(
                     
                     <div class='form-section'>
                         <label for='next_maintenance_date'><?php echo __('Próxima Manutenção'); ?> <span class='required'>*</span></label>
-                        <input type='text' id='next_maintenance_date' name='next_maintenance_date' 
-                               value="<?php echo $is_edit ? $item_data['next_maintenance_date'] : ''; ?>" 
+                        <input type='text' id='next_maintenance_date' name='next_maintenance_date'
+                               value="<?php echo $is_edit ? $item_data['next_maintenance_date'] : ''; ?>"
                                class='form-control interval-field' required>
                     </div>
-                    
+
+                    <div class='form-section'>
+                        <label>
+                            <input type='checkbox' name='is_recurring' id='is_recurring' value='1'
+                                   <?php echo ($is_edit && !empty($item_data['is_recurring'])) ? 'checked' : ''; ?>>
+                            <?php echo __('Recorrência automática'); ?>
+                        </label>
+                        <small class="text-muted d-block mt-1">
+                            <?php echo __('Se marcado, a próxima manutenção é sempre reagendada automaticamente, independente do chamado atual ter sido resolvido ou não.'); ?>
+                        </small>
+                        <div id='recurrence_months_wrapper' class='mt-2' style="<?php echo ($is_edit && !empty($item_data['is_recurring'])) ? '' : 'display:none;'; ?>">
+                            <label for='recurrence_months'><?php echo __('A cada'); ?></label>
+                            <?php
+                            $recurrence_options = PluginPreventivemaintenancePreventivemaintenance::getRecurrenceMonthOptions();
+                            $selected_recurrence = $is_edit ? (int)($item_data['recurrence_months'] ?? 3) : 3;
+                            $is_custom_recurrence = $is_edit && !array_key_exists($selected_recurrence, $recurrence_options);
+                            ?>
+                            <select name='recurrence_months' id='recurrence_months' class='form-select'>
+                                <?php
+                                foreach ($recurrence_options as $months => $label) {
+                                    $selected = (!$is_custom_recurrence && $months == $selected_recurrence) ? 'selected' : '';
+                                    echo "<option value='{$months}' {$selected}>{$label}</option>";
+                                }
+                                $selected = $is_custom_recurrence ? 'selected' : '';
+                                echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
+                                ?>
+                            </select>
+                            <div id='recurrence_months_custom_wrapper' class='mt-2' style="<?php echo $is_custom_recurrence ? '' : 'display:none;'; ?>">
+                                <label for='recurrence_months_custom'><?php echo __('Quantidade de meses'); ?></label>
+                                <input type='number' name='recurrence_months_custom' id='recurrence_months_custom'
+                                       class='form-control' min='1' max='120'
+                                       value="<?php echo $is_custom_recurrence ? $selected_recurrence : ''; ?>">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='form-section'>
+                        <label for='tickettemplates_id'><?php echo __('Modelo de Chamado'); ?></label>
+                        <select name='tickettemplates_id' id='tickettemplates_id' class='form-select'>
+                            <option value='0'><?php echo __('Selecione um modelo de chamado'); ?></option>
+                            <?php
+                            foreach ($all_ticket_templates as $tt) {
+                                $selected = ($is_edit && ($item_data['tickettemplates_id'] ?? 0) == $tt['id']) ? 'selected' : '';
+                                echo "<option value='{$tt['id']}' {$selected}>{$tt['name']}</option>";
+                            }
+                            ?>
+                        </select>
+                    </div>
+
                     <div class='d-flex justify-content-between mt-4'>
                         <button type='button' class='btn btn-secondary' id='backButton'>
                             <i class='fas fa-arrow-left me-2'></i><?php echo __('Voltar'); ?>
@@ -650,12 +774,14 @@ Html::header(
             <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
             <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-ui-i18n/1.12.1/jquery-ui-i18n.min.js"></script>
-            
+
             <!-- Script JavaScript para funcionalidades do formulário -->
             <!-- JavaScript script for form functionalities -->
             <script>
-            const computersData = <?php echo json_encode(array_values($all_computers)); ?>;
-            const blockedComputers = <?php echo json_encode($blocked_computers); ?>;
+            const itemsData = <?php echo json_encode(array_values($all_items)); ?>;
+            const blockedItems = <?php echo json_encode($blocked_items); ?>;
+            const currentEditItemtype = <?php echo json_encode($is_edit ? $item_data['itemtype'] : null); ?>;
+            const currentEditItemsId = <?php echo json_encode($is_edit ? (int)$item_data['items_id'] : null); ?>;
             
             $(document).ready(function() {
                 // Configuração de localização para português
@@ -801,43 +927,68 @@ Html::header(
                         alert('<?php echo __("Selecione uma entidade"); ?>');
                         return;
                     }
-                    
+
                     const entityId = $('#entities_id_select').val();
                     const entityName = $('#entities_id_select option:selected').text();
-                    
+
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
                     $('#selected-entity-id').text(entityId);
-                    loadComputers(entityId);
-                    
+                    loadItems($('#itemtype').val(), entityId);
+
                     $('#step1').hide();
                     $('#step2').show();
                 });
-                
+
                 // Evento do botão Voltar
                 // Back button event
                 $('#backButton').click(function() {
                     $('#step2').hide();
                     $('#step1').show();
                 });
-                
-                // Carrega os computadores disponíveis para a entidade selecionada
-                // Loads available computers for selected entity
-                function loadComputers(entityId) {
+
+                // Mostra/esconde o seletor de intervalo conforme a recorrência é marcada
+                // Shows/hides the interval selector as recurrence is toggled
+                $('#is_recurring').change(function() {
+                    $('#recurrence_months_wrapper').toggle(this.checked);
+                });
+
+                // Mostra/esconde o campo de quantidade personalizada de meses
+                // Shows/hides the custom month-count field
+                $('#recurrence_months').change(function() {
+                    $('#recurrence_months_custom_wrapper').toggle($(this).val() === 'custom');
+                });
+
+                // Recarrega os itens disponíveis quando o tipo de item muda
+                // Reloads available items when the item type changes
+                $('#itemtype').change(function() {
+                    const entityId = $('#entities_id').val();
+                    if (entityId) {
+                        loadItems($(this).val(), entityId);
+                    }
+                });
+
+                // Carrega os itens disponíveis para o tipo e a entidade selecionados
+                // Loads available items for the selected type and entity
+                function loadItems(itemtype, entityId) {
                     const select = $('#items_id');
                     select.find('option').not(':first').remove();
-                    
-                    const filteredComputers = computersData.filter(comp => {
-                        return comp.entities_id == entityId && 
-                               (!blockedComputers.includes(comp.id) || <?php echo $is_edit ? 'comp.id == ' . $item_data['items_id'] : 'false'; ?>);
+
+                    const filteredItems = itemsData.filter(item => {
+                        if (item.itemtype !== itemtype || item.entities_id != entityId) {
+                            return false;
+                        }
+                        const key = item.itemtype + '|' + item.id;
+                        const isCurrentEditItem = (currentEditItemtype === item.itemtype && currentEditItemsId === item.id);
+                        return !blockedItems.includes(key) || isCurrentEditItem;
                     });
-                    
-                    if (filteredComputers.length > 0) {
-                        filteredComputers.forEach(comp => {
-                            select.append(new Option(comp.name, comp.id));
+
+                    if (filteredItems.length > 0) {
+                        filteredItems.forEach(item => {
+                            select.append(new Option(item.name, item.id));
                         });
                     } else {
-                        const option = new Option('<?php echo __("Nenhum computador disponível"); ?>', '');
+                        const option = new Option('<?php echo __("Nenhum item disponível"); ?>', '');
                         option.disabled = true;
                         select.append(option);
                     }
@@ -905,11 +1056,60 @@ Html::header(
             });
             </script>
         </div>
-        <!-- Rodapé personalizado -->
-        <!-- Custom footer -->
-        <div class="custom-footer">
-            <i class="fas fa-code"></i> <?= __('Desenvolvido por WIDA - Work Information Developments and Analytics') ?>
+    </div>
+
+    <?php if ($is_edit): ?>
+    <!-- Histórico de chamados desta manutenção -->
+    <!-- Ticket history for this maintenance -->
+    <div class='card mt-4' id='history'>
+        <div class='card-body'>
+            <h4><i class="fas fa-history me-2"></i><?php echo __('Histórico de Chamados'); ?></h4>
+            <?php if (empty($ticket_history)): ?>
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-exclamation-triangle"></i> <?php echo __('Nenhum chamado foi criado ainda para esta manutenção.'); ?>
+                </div>
+            <?php else: ?>
+                <div style="overflow-x: auto;">
+                    <table class="table table-hover mt-3">
+                        <thead>
+                            <tr>
+                                <th style="text-align: center"><?php echo __('Chamado'); ?></th>
+                                <th style="text-align: center"><?php echo __('Status'); ?></th>
+                                <th style="text-align: center"><?php echo __('Criado em'); ?></th>
+                                <th style="text-align: center"><?php echo __('Resolvido em'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($ticket_history as $row): ?>
+                                <?php
+                                $is_closed = in_array((int)$row['status'], [Ticket::CLOSED, Ticket::SOLVED], true);
+                                $status_class = $is_closed ? 'bg-success' : 'bg-warning';
+                                ?>
+                                <tr>
+                                    <td style="text-align: center">
+                                        <a href="<?php echo $CFG_GLPI['root_doc']; ?>/front/ticket.form.php?id=<?php echo $row['id']; ?>" target="_blank">
+                                            #<?php echo $row['id']; ?> - <?php echo htmlspecialchars($row['name']); ?>
+                                        </a>
+                                    </td>
+                                    <td style="text-align: center">
+                                        <span class="badge <?php echo $status_class; ?>"><?php echo Ticket::getStatus((int)$row['status']); ?></span>
+                                    </td>
+                                    <td style="text-align: center"><?php echo Html::convDateTime($row['date_creation']); ?></td>
+                                    <td style="text-align: center"><?php echo !empty($row['resolved_at']) ? Html::convDateTime($row['resolved_at']) : '-'; ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Rodapé personalizado -->
+    <!-- Custom footer -->
+    <div class="custom-footer">
+        <i class="fas fa-code"></i> <?= __('Desenvolvido por WIDA - Work Information Developments and Analytics') ?>
     </div>
 </div>
 

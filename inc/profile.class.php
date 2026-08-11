@@ -72,7 +72,7 @@ class PluginPreventivemaintenanceProfile extends Profile {
    // Defines tab name for profiles
    public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0) {
       if ($item->getType() == 'Profile' && $item->getField('interface') != 'helpdesk') {
-         return __('Preventive Maintenance', 'preventivemaintenance');
+         return __('Manutenção Preventiva', 'preventivemaintenance');
       }
       return '';
    }
@@ -111,7 +111,7 @@ class PluginPreventivemaintenanceProfile extends Profile {
       $rights = [
          [
             'itemtype' => 'PluginPreventivemaintenancePreventivemaintenance',
-            'label'    => __('Preventive Maintenance', 'preventivemaintenance'),
+            'label'    => __('Manutenção Preventiva', 'preventivemaintenance'),
             'field'    => 'plugin_preventivemaintenance'
          ]
       ];

@@ -190,66 +190,69 @@ if (isset($_GET['toggle_auto_ticket'])) {
     Html::redirect('preventivemaintenance.php');
 }
 
-// Função para verificar tickets abertos
-function hasOpenMaintenanceTicket($computer_id, $maintenance_name) {
+// Função para verificar tickets abertos. Usa maintenance_id (vínculo direto e
+// confiável) em vez de casar por nome do chamado — a linha de rastreamento
+// agora fica gravada para sempre (vira histórico), então "aberto" é decidido
+// pelo status real do chamado, não pela existência da linha.
+// Function to check for open tickets. Uses maintenance_id (a direct, reliable
+// link) instead of matching by ticket name — the tracking row now stays
+// forever (becomes history), so "open" is decided by the ticket's real
+// status, not by whether the row exists.
+function hasOpenMaintenanceTicket($maintenance_id) {
     global $DB;
-    
-    if (empty($computer_id) || !is_numeric($computer_id) || empty($maintenance_name)) {
+
+    if (empty($maintenance_id)) {
         return false;
     }
-    
+
     try {
         $criteria = [
-            'SELECT' => ['id'],
-            'FROM' => 'glpi_tickets',
-            'WHERE' => [
-                'items_id' => (int)$computer_id,
-                'itemtype' => 'Computer',
-                'name' => ['LIKE', '%' . $DB->escape($maintenance_name) . '%'],
-                ['NOT' => ['status' => [Ticket::CLOSED, Ticket::SOLVED]]]
-            ],
-            'LIMIT' => 1
-        ];
-        
-        $iterator = $DB->request($criteria);
-        
-        if (count($iterator)) {
-            return true;
-        }
-        
-        $criteria = [
-            'SELECT' => ['id'],
+            'SELECT' => ['glpi_plugin_preventivemaintenance_tickets.id'],
             'FROM' => 'glpi_plugin_preventivemaintenance_tickets',
+            'INNER JOIN' => [
+                'glpi_tickets' => [
+                    'ON' => [
+                        'glpi_plugin_preventivemaintenance_tickets' => 'ticket_id',
+                        'glpi_tickets' => 'id'
+                    ]
+                ]
+            ],
             'WHERE' => [
-                'computer_id' => (int)$computer_id,
-                'maintenance_name' => $maintenance_name
+                'glpi_plugin_preventivemaintenance_tickets.maintenance_id' => (int)$maintenance_id,
+                'glpi_plugin_preventivemaintenance_tickets.resolved_at' => null,
+                ['NOT' => ['glpi_tickets.status' => [Ticket::CLOSED, Ticket::SOLVED]]]
             ],
             'LIMIT' => 1
         ];
-        
+
         $iterator = $DB->request($criteria);
-        
+
         return count($iterator) > 0;
     } catch (Exception $e) {
-        Toolbox::logError("Erro ao verificar tickets existentes: " . $e->getMessage());
+        error_log("Erro ao verificar tickets existentes: " . $e->getMessage());
         return false;
     }
 }
 
-// Função para registrar ticket
-function registerMaintenanceTicket($ticket_id, $computer_id, $maintenance_name) {
+// Função para registrar ticket (também é o registro de histórico — a linha
+// não é mais apagada quando o chamado é resolvido).
+// Function to register the ticket (this is also the history record — the row
+// is no longer deleted once the ticket is resolved).
+function registerMaintenanceTicket($ticket_id, $maintenance_id, $items_id, $itemtype, $maintenance_name) {
     global $DB;
-    
+
     try {
         $DB->insert('glpi_plugin_preventivemaintenance_tickets', [
             'ticket_id' => (int)$ticket_id,
-            'computer_id' => (int)$computer_id,
+            'maintenance_id' => (int)$maintenance_id,
+            'items_id' => (int)$items_id,
+            'itemtype' => $itemtype,
             'maintenance_name' => $maintenance_name,
             'date_creation' => date('Y-m-d H:i:s')
         ]);
         return true;
     } catch (Exception $e) {
-        Toolbox::logError("Erro ao registrar o ticket: " . $e->getMessage());
+        error_log("Erro ao registrar o ticket: " . $e->getMessage());
         return false;
     }
 }
@@ -257,60 +260,76 @@ function registerMaintenanceTicket($ticket_id, $computer_id, $maintenance_name) 
 // Função para atualizar manutenção
 function updateMaintenanceOnTicketResolution($ticket_id) {
     global $DB;
-    
+
     try {
         $criteria = [
-            'SELECT' => ['computer_id', 'maintenance_name'],
+            'SELECT' => ['maintenance_id', 'maintenance_name'],
             'FROM' => 'glpi_plugin_preventivemaintenance_tickets',
             'WHERE' => [
-                'ticket_id' => (int)$ticket_id
+                'ticket_id' => (int)$ticket_id,
+                'resolved_at' => null
             ],
             'LIMIT' => 1
         ];
-        
+
         $iterator = $DB->request($criteria);
-        
+
         if (count($iterator)) {
             $data = $iterator->current();
-            $computer_id = $data['computer_id'];
+            $maintenance_id = $data['maintenance_id'];
             $maintenance_name = $data['maintenance_name'];
-            
+
             $pm = new PluginPreventivemaintenancePreventivemaintenance();
-            $maintenance = $pm->find([
-                'items_id' => $computer_id,
-                'name' => $maintenance_name
-            ]);
-            
-            if (count($maintenance)) {
-                $maintenance_data = current($maintenance);
-                $maintenance_id = $maintenance_data['id'];
-                
+
+            if ($pm->getFromDB($maintenance_id)) {
+                $maintenance_data = $pm->fields;
+
+                // Marca a linha como resolvida (mantém o histórico) em vez de
+                // apagá-la.
+                // Marks the row as resolved (keeps history) instead of deleting it.
+                $mark_resolved = function () use ($DB, $ticket_id) {
+                    $DB->update('glpi_plugin_preventivemaintenance_tickets', [
+                        'resolved_at' => date('Y-m-d H:i:s')
+                    ], [
+                        'ticket_id' => $ticket_id
+                    ]);
+                };
+
+                // Manutenções com recorrência automática têm a data reagendada
+                // por advanceRecurringSchedules(), de forma independente da
+                // resolução do chamado; aqui só marcamos o histórico.
+                // Auto-recurring maintenances have their date rescheduled by
+                // advanceRecurringSchedules(), independent of ticket resolution;
+                // here we just mark the history.
+                if (!empty($maintenance_data['is_recurring'])) {
+                    $mark_resolved();
+                    return true;
+                }
+
                 $ticket = new Ticket();
                 if ($ticket->getFromDB($ticket_id)) {
                     $solvedate = $ticket->getField('solvedate');
-                    
+
                     if (!empty($solvedate)) {
                         $last_date = $maintenance_data['last_maintenance_date'];
                         $next_date = $maintenance_data['next_maintenance_date'];
-                        
+
                         if (!empty($last_date) && !empty($next_date)) {
                             $last_timestamp = strtotime($last_date);
                             $next_timestamp = strtotime($next_date);
                             $interval = $next_timestamp - $last_timestamp;
-                            
+
                             $new_next_date = date('Y-m-d H:i:s', strtotime($solvedate) + $interval);
-                            
+
                             $input = [
                                 'id' => $maintenance_id,
                                 'name' => $maintenance_name,
                                 'last_maintenance_date' => $solvedate,
                                 'next_maintenance_date' => $new_next_date
                             ];
-                            
+
                             if ($pm->update($input)) {
-                                $DB->delete('glpi_plugin_preventivemaintenance_tickets', [
-                                    'ticket_id' => $ticket_id
-                                ]);
+                                $mark_resolved();
                                 return true;
                             }
                         }
@@ -320,7 +339,7 @@ function updateMaintenanceOnTicketResolution($ticket_id) {
         }
         return false;
     } catch (Exception $e) {
-        Toolbox::logError("Erro ao atualizar a manutenção: " . $e->getMessage());
+        error_log("Erro ao atualizar a manutenção: " . $e->getMessage());
         return false;
     }
 }
@@ -342,40 +361,98 @@ function cleanResolvedMaintenanceTickets() {
                 ]
             ],
             'WHERE' => [
-                'glpi_tickets.status' => [Ticket::CLOSED, Ticket::SOLVED]
+                'glpi_tickets.status' => [Ticket::CLOSED, Ticket::SOLVED],
+                'glpi_plugin_preventivemaintenance_tickets.resolved_at' => null
             ]
         ];
-        
+
         $iterator = $DB->request($criteria);
-        
+
         foreach ($iterator as $data) {
+            // updateMaintenanceOnTicketResolution() marca resolved_at internamente
+            // (a linha vira histórico, não é mais apagada).
+            // updateMaintenanceOnTicketResolution() marks resolved_at internally
+            // (the row becomes history, no longer deleted).
             updateMaintenanceOnTicketResolution($data['id']);
-            
-            $DB->delete('glpi_plugin_preventivemaintenance_tickets', [
-                'ticket_id' => $data['id']
-            ]);
         }
-        
+
         return true;
     } catch (Exception $e) {
-        Toolbox::logError("Erro ao limpar tickets resolvidos: " . $e->getMessage());
+        error_log("Erro ao limpar tickets resolvidos: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Função para avançar manutenções com recorrência automática (por calendário)
+// Reagenda a próxima data pelo mesmo intervalo, independente do chamado atual
+// ter sido resolvido ou não.
+// Function to advance auto-recurring maintenances (calendar-based)
+// Reschedules the next date by the same interval, independent of whether the
+// current ticket has been resolved.
+function advanceRecurringSchedules() {
+    global $DB;
+
+    try {
+        $pm = new PluginPreventivemaintenancePreventivemaintenance();
+        $due = $pm->find([
+            'is_recurring' => 1,
+            ['next_maintenance_date' => ['<=', date('Y-m-d')]]
+        ]);
+
+        foreach ($due as $item) {
+            // Avança por meses de calendário (não por uma contagem fixa de dias),
+            // já que meses têm tamanhos diferentes — "a cada 3 meses" deve
+            // sempre cair no mesmo dia do mês, 3 meses depois.
+            // Advances by calendar months (not a fixed day count), since months
+            // have different lengths — "every 3 months" should always land on
+            // the same day of the month, 3 months later.
+            $recurrence_months = max(1, (int)$item['recurrence_months']);
+            $next = new DateTime($item['next_maintenance_date']);
+            $last = $item['next_maintenance_date'];
+
+            // Avança em passos do intervalo até a próxima data ficar no futuro
+            // (cobre o caso de a manutenção ter ficado várias janelas sem rodar).
+            // Steps forward by the interval until the next date is in the future
+            // (covers the case where the maintenance missed several windows).
+            while ($next <= new DateTime()) {
+                $last = $next->format('Y-m-d');
+                $next->modify("+{$recurrence_months} months");
+            }
+
+            $pm->update([
+                'id' => $item['id'],
+                'name' => $item['name'],
+                'last_maintenance_date' => $last,
+                'next_maintenance_date' => $next->format('Y-m-d'),
+            ]);
+        }
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Erro ao avançar manutenções recorrentes: " . $e->getMessage());
         return false;
     }
 }
 
 // Função para criar ticket
-function createMaintenanceTicket($computer_id, $maintenance_name, $technician_id) {
-    if (hasOpenMaintenanceTicket($computer_id, $maintenance_name)) {
+function createMaintenanceTicket($maintenance_id, $items_id, $itemtype, $maintenance_name, $technician_id, $tickettemplates_id = 0, $groups_id = 0) {
+    if (hasOpenMaintenanceTicket($maintenance_id)) {
         return false;
     }
-    
+
+    $item_name = Dropdown::getDropdownName($itemtype::getTable(), $items_id);
+
     $ticket = new Ticket();
-    
+
+    // NOTE: items_id/itemtype não são mais passados direto para Ticket::add() —
+    // o vínculo é feito abaixo via Item_Ticket::add(), o mecanismo padrão do GLPI
+    // (faz o item aparecer na aba "Elementos associados" do chamado).
+    // NOTE: items_id/itemtype are no longer passed directly to Ticket::add() —
+    // the association is done below via Item_Ticket::add(), GLPI's standard
+    // mechanism (makes the item appear in the ticket's "Associated Elements" tab).
     $input = [
-        'name' => sprintf(__('Preventive maintenance required: %s'), $maintenance_name),
-        'content' => sprintf(__('Computer requires preventive maintenance for: %s'), $maintenance_name),
-        'items_id' => (int)$computer_id,
-        'itemtype' => 'Computer',
+        'name' => sprintf(__('Manutenção preventiva necessária: %s'), $maintenance_name),
+        'content' => sprintf(__('O item %s requer manutenção preventiva: %s'), $item_name, $maintenance_name),
         'type' => Ticket::INCIDENT_TYPE,
         'status' => Ticket::INCOMING,
         'urgency' => 5,
@@ -386,20 +463,64 @@ function createMaintenanceTicket($computer_id, $maintenance_name, $technician_id
         'entities_id' => $_SESSION['glpiactive_entity'],
         'date' => date('Y-m-d H:i:s')
     ];
-    
-    if (!empty($technician_id)) {
-        $input['_observers']['_users_id_observer'] = [(int)$technician_id];
+
+    // Aplica os campos pré-definidos do modelo de chamado escolhido (categoria,
+    // SLA, tipo etc.), sem sobrescrever valores já definidos explicitamente acima.
+    // Applies the chosen ticket template's predefined fields (category, SLA,
+    // type, etc.), without overriding values already set explicitly above.
+    if (!empty($tickettemplates_id)) {
+        $template = new TicketTemplate();
+        if ($template->getFromDB((int)$tickettemplates_id)) {
+            $predefined_manager = TicketTemplate::getPredefinedFields();
+            // $withtypeandcategory=true para incluir itilcategories_id/type no mapa de
+            // campos permitidos (ficam de fora por padrão).
+            // $withtypeandcategory=true to include itilcategories_id/type in the
+            // allowed-fields map (excluded by default).
+            $predefined_fields = $predefined_manager->getPredefinedFields($template->fields['id'], true);
+            foreach ($predefined_fields as $field => $value) {
+                if (!isset($input[$field])) {
+                    $input[$field] = $value;
+                }
+            }
+            $input['tickettemplates_id'] = (int)$tickettemplates_id;
+        }
     }
-    
+
+    // Convenção atual do GLPI (10+/11) para atores do chamado: array estruturado
+    // _actors[tipo][] = ['itemtype' => ..., 'items_id' => ...]. A antiga chave
+    // _observers usada aqui antes nunca foi processada por Ticket::add() no GLPI 11
+    // (verificado no código-fonte) — o observador nunca era realmente adicionado.
+    // Current GLPI (10+/11) convention for ticket actors: structured array
+    // _actors[type][] = ['itemtype' => ..., 'items_id' => ...]. The old _observers
+    // key previously used here was never processed by Ticket::add() on GLPI 11
+    // (verified in source) — the observer was never actually being added.
+    $observers = [];
+    if (!empty($technician_id)) {
+        $observers[] = ['itemtype' => 'User', 'items_id' => (int)$technician_id];
+    }
+    if (!empty($groups_id)) {
+        $observers[] = ['itemtype' => 'Group', 'items_id' => (int)$groups_id];
+    }
+    if (!empty($observers)) {
+        $input['_actors']['observer'] = $observers;
+    }
+
     try {
         $ticket_id = $ticket->add($input);
         if ($ticket_id) {
-            registerMaintenanceTicket($ticket_id, $computer_id, $maintenance_name);
+            $item_ticket = new Item_Ticket();
+            $item_ticket->add([
+                'tickets_id' => $ticket_id,
+                'itemtype'   => $itemtype,
+                'items_id'   => (int)$items_id,
+            ]);
+
+            registerMaintenanceTicket($ticket_id, $maintenance_id, $items_id, $itemtype, $maintenance_name);
             return $ticket_id;
         }
         return false;
     } catch (Exception $e) {
-        Toolbox::logError("Erro ao criar o ticket: " . $e->getMessage());
+        error_log("Erro ao criar o ticket: " . $e->getMessage());
         return false;
     }
 }
@@ -425,9 +546,13 @@ if ($auto_ticket_enabled) {
                 
                 if ($percent >= 99) {
                     $ticket_id = createMaintenanceTicket(
+                        $item['id'],
                         $item['items_id'],
+                        $item['itemtype'],
                         $item['name'],
-                        $item['technician_id']
+                        $item['technician_id'],
+                        $item['tickettemplates_id'] ?? 0,
+                        $item['groups_id'] ?? 0
                     );
                     
                     if ($ticket_id) {
@@ -442,6 +567,14 @@ if ($auto_ticket_enabled) {
         }
     }
 }
+
+// Avança manutenções com recorrência automática (por calendário). Roda DEPOIS
+// da criação de tickets acima, para que uma janela vencida ainda gere o chamado
+// antes de a data ser empurrada para a próxima janela.
+// Advances auto-recurring maintenances (calendar-based). Runs AFTER the ticket
+// creation above, so an overdue window still generates the ticket before the
+// date gets pushed to the next window.
+advanceRecurringSchedules();
 
 // Prepara critérios de busca
 $criteria = [];
@@ -482,6 +615,26 @@ if (!empty($technicians_in_maintenance)) {
     $technicians_iterator = $user->find(['id' => array_values($technicians_in_maintenance)]);
     foreach ($technicians_iterator as $tech) {
         $technicians_data[$tech['id']] = formatUserName($tech['id'], $tech['name'], $tech['realname'], $tech['firstname']);
+    }
+}
+
+// Obtém lista de grupos cadastrados nas manutenções
+// Gets the list of groups registered in the maintenance records
+$groups_in_maintenance = [];
+foreach ($all_items as $item) {
+    if (!empty($item['groups_id'])) {
+        $groups_in_maintenance[$item['groups_id']] = $item['groups_id'];
+    }
+}
+
+// Carrega os dados dos grupos
+// Loads group data
+$groups_data = [];
+if (!empty($groups_in_maintenance)) {
+    $group = new Group();
+    $groups_iterator = $group->find(['id' => array_values($groups_in_maintenance)]);
+    foreach ($groups_iterator as $grp) {
+        $groups_data[$grp['id']] = $grp['name'];
     }
 }
 
@@ -561,7 +714,7 @@ uksort($items_by_entity, function($a, $b) {
 
 // Exibe cabeçalho
 Html::header(
-    __('Preventive Maintenance', 'preventivemaintenance'),
+    __('Manutenção Preventiva', 'preventivemaintenance'),
     $_SERVER['PHP_SELF'],
     'plugins',
     'preventivemaintenance'
@@ -861,7 +1014,7 @@ Html::header(
 
 <div class="plugin-preventive-maintenance-container">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-        <h2 style="margin: 0;"><i class="fas fa-calendar-check" style="margin-right: 10px;"></i><?= __('Preventive Maintenance') ?></h2>
+        <h2 style="margin: 0;"><i class="fas fa-calendar-check" style="margin-right: 10px;"></i><?= __('Manutenção Preventiva') ?></h2>
         <div style="display: flex; align-items: center;">
             <?php if ($pm->canCreate()): ?>
                 <a href="preventivemaintenance.form.php" class="btn btn-primary" style="margin-right: 10px;">
@@ -968,8 +1121,9 @@ Html::header(
                             <tr>
                                 <th style="text-align: center"><?= __('ID') ?></th>
                                 <th style="text-align: center"><?= __('Nome/descr.') ?></th>
-                                <th style="text-align: center"><?= __('Computer') ?></th>
+                                <th style="text-align: center"><?= __('Item') ?></th>
                                 <th style="text-align: center"><?= __('Technician') ?></th>
+                                <th style="text-align: center"><?= __('Grupo') ?></th>
                                 <th style="text-align: center"><?= __('Ult. Man.') ?></th>
                                 <th style="text-align: center"><?= __('Prox. Man') ?></th>
                                 <th style="text-align: center"><?= __('Status') ?></th>
@@ -979,11 +1133,22 @@ Html::header(
                         <tbody>
                             <?php foreach ($entity['items'] as $item): ?>
                                 <?php
-                                $computer = new Computer();
-                                $computer_name = $computer->getFromDB($item['items_id']) ? $computer->getName() : __('N/A');
-                                
+                                $item_itemtype = $item['itemtype'] ?? 'Computer';
+                                // Whitelist-check defensivo antes de instanciar, mesmo vindo do banco
+                                // Defensive whitelist check before instantiating, even though it comes from the DB
+                                if (in_array($item_itemtype, PluginPreventivemaintenancePreventivemaintenance::getAllowedItemtypes(), true)) {
+                                    $item_obj = new $item_itemtype();
+                                    $item_display_name = $item_obj->getFromDB($item['items_id'])
+                                        ? $item_obj->getName() . ' (' . $item_itemtype::getTypeName(1) . ')'
+                                        : __('N/A');
+                                } else {
+                                    $item_display_name = __('N/A');
+                                }
+
                                 $technician_name = isset($technicians_data[$item['technician_id']]) ? $technicians_data[$item['technician_id']] : '-';
-                                
+                                $group_name = isset($groups_data[$item['groups_id']]) ? $groups_data[$item['groups_id']] : '-';
+
+
                                 $last = !empty($item['last_maintenance_date']) ? strtotime($item['last_maintenance_date']) : 0;
                                 $next = !empty($item['next_maintenance_date']) ? strtotime($item['next_maintenance_date']) : 0;
                                 $now = time();
@@ -1015,14 +1180,26 @@ Html::header(
                                 ?>
                                 <tr>
                                     <td style="text-align: center"><?= $item['id'] ?></td>
-                                    <td style="text-align: center"><?= $item['name'] ?></td>
-                                    <td style="text-align: center"><?= $computer_name ?></td>
+                                    <td style="text-align: center">
+                                        <?= $item['name'] ?>
+                                        <?php if (!empty($item['is_recurring'])):
+                                            $recurrence_options = PluginPreventivemaintenancePreventivemaintenance::getRecurrenceMonthOptions();
+                                            $recurrence_label = $recurrence_options[(int)$item['recurrence_months']] ?? '';
+                                        ?>
+                                            <i class="fas fa-sync-alt" title="<?= sprintf(__('Recorrência automática: a cada %s'), $recurrence_label) ?>"></i>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td style="text-align: center"><?= $item_display_name ?></td>
                                     <td style="text-align: center"><?= $technician_name ?></td>
+                                    <td style="text-align: center"><?= $group_name ?></td>
                                     <td style="text-align: center"><?= !empty($item['last_maintenance_date']) ? Html::convDate($item['last_maintenance_date']) : '-' ?></td>
                                     <td style="text-align: center"><?= !empty($item['next_maintenance_date']) ? Html::convDate($item['next_maintenance_date']) : '-' ?></td>
                                     <td style="text-align: center"><?= $status_html ?></td>
                                     <td style="text-align: center">
                                         <div class="action-buttons">
+                                            <a href="preventivemaintenance.form.php?id=<?= $item['id'] ?>#history" class="btn btn-sm btn-outline-secondary" title="<?= __('Ver histórico de chamados') ?>">
+                                                <i class="fas fa-search"></i>
+                                            </a>
                                             <?php if (Session::haveRight('plugin_preventivemaintenance', UPDATE)): ?>
                                                 <a href="preventivemaintenance.form.php?id=<?= $item['id'] ?>" class="btn btn-sm btn-primary" title="<?= __('Edit') ?>">
                                                     <i class="fas fa-edit"></i>
