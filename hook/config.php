@@ -81,7 +81,7 @@ Plugin::registerClass('PluginPreventivemaintenancePreventivemaintenance', [
 function plugin_preventivemaintenance_getMenuContent() {
    if (Session::haveRight("plugin_preventivemaintenance", READ)) {
       return [
-         'title' => __('Preventive Maintenance', 'preventivemaintenance'),
+         'title' => __('Manutenção Preventiva', 'preventivemaintenance'),
          'page'  => '/plugins/preventivemaintenance/front/preventivemaintenance.php',
          'icon'  => 'fas fa-tools'
       ];

@@ -68,7 +68,7 @@ class PluginPreventivemaintenanceMenu extends CommonGLPI {
     //Retorna o nome do menu
     //Returns menu name
     static function getMenuName() {
-        return __('Preventive Maintenance', 'preventivemaintenance');
+        return __('Manutenção Preventiva', 'preventivemaintenance');
     }
 
     //Define o conteúdo completo do menu

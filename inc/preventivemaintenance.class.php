@@ -76,12 +76,52 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
    // Access right name
    static $rightname = 'plugin_preventivemaintenance';
 
+   // Tipos de item nativos sempre disponíveis para vínculo
+   // Native item types always available for linking
+   const BASE_ITEMTYPES = ['Computer', 'Monitor', 'Printer', 'NetworkEquipment', 'Peripheral', 'Phone'];
+
+   /**
+    * Retorna os tipos de item permitidos para vínculo: a lista fixa de ativos
+    * nativos + qualquer Asset Definition personalizada ativa (GLPI 10.1+/11).
+    * Returns the item types allowed for linking: the fixed list of native
+    * assets + any active custom Asset Definition (GLPI 10.1+/11).
+    */
+   public static function getAllowedItemtypes() {
+      $itemtypes = self::BASE_ITEMTYPES;
+
+      if (class_exists(\Glpi\Asset\AssetDefinitionManager::class)) {
+         $manager = \Glpi\Asset\AssetDefinitionManager::getInstance();
+         foreach ($manager->getDefinitions(true) as $definition) {
+            $itemtypes[] = $definition->getAssetClassName(true);
+         }
+      }
+
+      return $itemtypes;
+   }
+
+   /**
+    * Opções de intervalo de recorrência automática, em meses.
+    * Automatic recurrence interval options, in months.
+    */
+   public static function getRecurrenceMonthOptions() {
+      return [
+         1  => __('1 mês'),
+         2  => __('2 meses'),
+         3  => __('3 meses'),
+         6  => __('6 meses'),
+         12 => __('1 ano'),
+         18 => __('18 meses'),
+         24 => __('2 anos'),
+         36 => __('3 anos'),
+      ];
+   }
+
    /**
     * Retorna o nome do tipo do item (singular/plural)
     * Returns the type name of the item (singular/plural)
     */
    static function getTypeName($nb = 0) {
-      return _n('Preventive Maintenance', 'Preventive Maintenances', $nb, 'preventivemaintenance');
+      return _n('Manutenção Preventiva', 'Manutenções Preventivas', $nb, 'preventivemaintenance');
    }
 
    /**
@@ -144,7 +184,7 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     * Verifica permissão de criação
     * Checks create permission
     */
-   static function canCreate() {
+   static function canCreate(): bool {
       return Session::haveRight(self::$rightname, CREATE);
    }
 
@@ -152,7 +192,7 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     * Verifica permissão de visualização
     * Checks view permission
     */
-   static function canView() {
+   static function canView(): bool {
       return Session::haveRight(self::$rightname, READ);
    }
 
@@ -160,7 +200,7 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     * Verifica permissão de atualização
     * Checks update permission
     */
-   static function canUpdate() {
+   static function canUpdate(): bool {
       return Session::haveRight(self::$rightname, UPDATE);
    }
 
@@ -168,10 +208,10 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     * Verifica permissão de exclusão (com tratamento especial para Super-Admin)
     * Checks delete permission (with special handling for Super-Admin)
     */
-   static function canDelete() {
+   static function canDelete(): bool {
     // Permissão sempre verdadeira para Super-Admin
     // Always true for Super-Admin
-    if (isset($_SESSION['glpiactiveprofile']['name']) && 
+    if (isset($_SESSION['glpiactiveprofile']['name']) &&
         $_SESSION['glpiactiveprofile']['name'] == 'Super-Admin') {
         return true;
     }
@@ -186,14 +226,18 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
       $this->initForm($ID, $options);
       $this->showFormHeader($options);
 
-    // Campo de seleção de computador
-    // Computer selection field
-    echo "<tr class='tab_bg_1'><td>".__('Computer')."</td><td>";
-    Computer::dropdown([
-        'name'   => 'items_id',
-        'value'  => $this->fields['items_id'] ?? 0,
-        'entity' => $this->fields['entities_id'] ?? $_SESSION['glpiactive_entity'],
-        'condition' => ['is_deleted' => 0]
+    // Campo de seleção do tipo de item + item vinculado
+    // Item type + linked item selection field
+    // NOTE: verificar em uma instância GLPI real os parâmetros exatos aceitos por
+    // Dropdown::showSelectItemFromItemtypes() para a versão instalada (10.x/11.x).
+    // NOTE: verify the exact parameters accepted by Dropdown::showSelectItemFromItemtypes()
+    // against a real GLPI instance for the installed version (10.x/11.x).
+    echo "<tr class='tab_bg_1'><td>".__('Item')."</td><td>";
+    Dropdown::showSelectItemFromItemtypes([
+        'itemtype'        => $this->fields['itemtype'] ?? 'Computer',
+        'items_id'        => $this->fields['items_id'] ?? 0,
+        'itemtypes'       => self::getAllowedItemtypes(),
+        'entity_restrict' => $this->fields['entities_id'] ?? $_SESSION['glpiactive_entity'],
     ]);
     echo "</td></tr>";
 
@@ -222,6 +266,41 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     ]);
     echo "</td></tr>";
 
+    // Campo de seleção do grupo responsável (mais estável que o técnico, que
+    // pode mudar com o tempo — pode ser usado no lugar do técnico ou junto).
+    // Responsible group selection field (more stable than the technician, who
+    // can change over time — can be used instead of or alongside the technician).
+    echo "<tr class='tab_bg_1'><td>" . __('Grupo Responsável') . "</td><td>";
+    Group::dropdown([
+       'name'   => 'groups_id',
+       'value'  => $this->fields['groups_id'] ?? 0,
+       'entity' => $this->fields['entities_id'] ?? $_SESSION['glpiactive_entity'],
+    ]);
+    echo "</td></tr>";
+
+    // Campo de recorrência automática (por calendário, independe da resolução do chamado)
+    // Automatic recurrence field (calendar-based, independent of ticket resolution)
+    echo "<tr class='tab_bg_1'><td>" . __('Recorrência Automática') . "</td><td>";
+    Html::showCheckbox([
+        'name'    => 'is_recurring',
+        'checked' => !empty($this->fields['is_recurring']),
+    ]);
+    echo "&nbsp;";
+    Dropdown::showFromArray('recurrence_months', self::getRecurrenceMonthOptions(), [
+        'value' => $this->fields['recurrence_months'] ?? 3,
+    ]);
+    echo "</td></tr>";
+
+    // Campo de seleção do modelo de chamado
+    // Ticket template selection field
+    echo "<tr class='tab_bg_1'><td>" . __('Modelo de Chamado') . "</td><td>";
+    TicketTemplate::dropdown([
+        'name'   => 'tickettemplates_id',
+        'value'  => $this->fields['tickettemplates_id'] ?? 0,
+        'entity' => $this->fields['entities_id'] ?? $_SESSION['glpiactive_entity'],
+    ]);
+    echo "</td></tr>";
+
     // Botões do formulário
     // Form buttons
     $this->showFormButtons($options);
@@ -233,11 +312,20 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     * Displays specific values for certain fields (especially status)
     */
    public static function getSpecificValueToDisplay($field, $values, array $options = []) {
+    if ($field == 'items_id') {
+        // Resolve o nome do item genericamente a partir do itemtype
+        // Generically resolves the item's name from its itemtype
+        if (empty($values['items_id']) || empty($values['itemtype'])) {
+            return '';
+        }
+        $itemtype = $values['itemtype'];
+        return Dropdown::getDropdownName($itemtype::getTable(), $values['items_id']);
+    }
     if ($field == 'status') {
-        // Verifica se há computador vinculado
-        // Checks if there's a linked computer
+        // Verifica se há item vinculado
+        // Checks if there's a linked item
         if (empty($values['items_id'])) {
-            return '<span class="state_undefined"><i class="fas fa-question-circle"></i> '.__('No Computer').'</span>';
+            return '<span class="state_undefined"><i class="fas fa-question-circle"></i> '.__('No Item Linked').'</span>';
         }
 
         // Verifica se tem datas válidas
@@ -272,20 +360,23 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     * Validates data before adding a new record
     */
    public function prepareInputForAdd($input) {
-    // Validação obrigatória do computador
-    // Computer validation
-    if (empty($input['items_id']) || $input['items_id'] == 0) {
-        Session::addMessageAfterRedirect(
-            __('You must select a valid computer', 'preventivemaintenance'), 
-            false, 
-            ERROR
-        );
+    // Validação obrigatória do tipo e do item vinculado
+    // Required validation of the item type and the linked item
+    if (!$this->validateItemtypeAndItem($input)) {
+        return false;
+    }
+
+    // Validação obrigatória do grupo responsável (referência estável de
+    // responsabilidade — diferente do técnico, que pode mudar com o tempo).
+    // Required validation of the responsible group (stable ownership
+    // reference — unlike the technician, who can change over time).
+    if (!$this->validateGroup($input)) {
         return false;
     }
 
     // Validação das datas
     // Date validation
-    if (!empty($input['last_maintenance_date']) && 
+    if (!empty($input['last_maintenance_date']) &&
         !empty($input['next_maintenance_date']) &&
         $input['next_maintenance_date'] <= $input['last_maintenance_date']) {
         Session::addMessageAfterRedirect(
@@ -298,11 +389,126 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
 
     // Definir valores padrão
     // Set default values
-    $input['itemtype'] = 'Computer';
     $input['entities_id'] = $_SESSION['glpiactive_entity'] ?? 0;
     $input['is_recursive'] = 0;
+    // Checkbox não envia nada quando desmarcado; normaliza para 0/1.
+    // Checkbox sends nothing when unchecked; normalize to 0/1.
+    $input['is_recurring'] = !empty($input['is_recurring']) ? 1 : 0;
+    $input['tickettemplates_id'] = (int)($input['tickettemplates_id'] ?? 0);
+    $input['recurrence_months'] = self::normalizeRecurrenceMonths($input['recurrence_months'] ?? null);
 
     return $input;
+   }
+
+   /**
+    * Normaliza o valor de recorrência: aceita tanto uma das opções fixas
+    * quanto um valor personalizado (qualquer inteiro positivo, até 120 meses).
+    * Normalizes the recurrence value: accepts either one of the fixed options
+    * or a custom value (any positive integer, up to 120 months).
+    */
+   private static function normalizeRecurrenceMonths($value) {
+      $months = (int)$value;
+      if ($months < 1) {
+         return 3;
+      }
+      return min($months, 120);
+   }
+
+   /**
+    * Valida se o registro será atualizado com um tipo/item válido
+    * Validates that the record will be updated with a valid type/item
+    */
+   public function prepareInputForUpdate($input) {
+    if (isset($input['itemtype']) || isset($input['items_id'])) {
+        if (!$this->validateItemtypeAndItem($input)) {
+            return false;
+        }
+    }
+    if (array_key_exists('groups_id', $input)) {
+        if (!$this->validateGroup($input)) {
+            return false;
+        }
+    }
+    if (array_key_exists('is_recurring', $input)) {
+        $input['is_recurring'] = !empty($input['is_recurring']) ? 1 : 0;
+    }
+    if (array_key_exists('tickettemplates_id', $input)) {
+        $input['tickettemplates_id'] = (int)$input['tickettemplates_id'];
+    }
+    if (array_key_exists('recurrence_months', $input)) {
+        $input['recurrence_months'] = self::normalizeRecurrenceMonths($input['recurrence_months']);
+    }
+    return $input;
+   }
+
+   /**
+    * Valida o itemtype (contra a whitelist) e a existência do item informado.
+    * Nunca instancia uma classe a partir de input não validado.
+    * Validates itemtype (against the whitelist) and that the given item exists.
+    * Never instantiates a class from unvalidated input.
+    */
+   private function validateItemtypeAndItem($input) {
+    if (empty($input['itemtype']) || !in_array($input['itemtype'], self::getAllowedItemtypes(), true)) {
+        Session::addMessageAfterRedirect(
+            __('Invalid item type selected', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    if (empty($input['items_id']) || (int)$input['items_id'] <= 0) {
+        Session::addMessageAfterRedirect(
+            __('You must select a valid item', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    $itemtype = $input['itemtype'];
+    $item = new $itemtype();
+    if (!$item->getFromDB((int)$input['items_id'])) {
+        Session::addMessageAfterRedirect(
+            __('Selected item was not found', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    return true;
+   }
+
+   /**
+    * Valida se um grupo responsável válido foi informado. O grupo é
+    * obrigatório (diferente do técnico, opcional) por ser a referência de
+    * responsabilidade que não muda quando um técnico troca de time.
+    * Validates that a valid responsible group was given. The group is
+    * required (unlike the technician, which is optional) since it's the
+    * ownership reference that doesn't change when a technician switches teams.
+    */
+   private function validateGroup($input) {
+    if (empty($input['groups_id']) || (int)$input['groups_id'] <= 0) {
+        Session::addMessageAfterRedirect(
+            __('You must select a responsible group', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    $group = new Group();
+    if (!$group->getFromDB((int)$input['groups_id'])) {
+        Session::addMessageAfterRedirect(
+            __('Selected group was not found', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    return true;
    }
 
    /**
@@ -330,24 +536,20 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
    public function getSearchOptionsNew() {
     $options = parent::getSearchOptionsNew();
 
-    // Opção para buscar por computador
-    // Option to search by computer
+    // Opção para exibir o item vinculado (qualquer itemtype permitido)
+    // Option to display the linked item (any allowed itemtype)
+    // NOTE: não é ordenável/filtrável via SQL, pois o item pode estar em tabelas
+    // diferentes conforme o itemtype — só exibição via getSpecificValueToDisplay().
+    // NOTE: not SQL-sortable/filterable, since the item can live in different
+    // tables depending on itemtype — display only, via getSpecificValueToDisplay().
     $options[] = [
         'id'                 => '2',
-        'table'              => 'glpi_computers',
-        'field'              => 'name',
-        'name'               => __('Computer'),
-        'datatype'           => 'dropdown',
-        'forcegroupby'       => true,
+        'name'               => __('Item'),
+        'field'              => 'items_id',
+        'nosearch'           => true,
         'massiveaction'      => false,
-        'joinparams'         => [
-            'beforejoin' => [
-                'table'      => 'glpi_plugin_preventivemaintenance_preventivemaintenances',
-                'joinparams' => [
-                    'jointype' => 'itemtype_item'
-                ]
-            ]
-        ]
+        'datatype'           => 'specific',
+        'additionalfields'   => ['itemtype', 'items_id']
     ];
 
     // Opção para buscar por técnico
