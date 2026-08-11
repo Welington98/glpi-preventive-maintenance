@@ -366,6 +366,14 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
         return false;
     }
 
+    // Validação obrigatória do grupo responsável (referência estável de
+    // responsabilidade — diferente do técnico, que pode mudar com o tempo).
+    // Required validation of the responsible group (stable ownership
+    // reference — unlike the technician, who can change over time).
+    if (!$this->validateGroup($input)) {
+        return false;
+    }
+
     // Validação das datas
     // Date validation
     if (!empty($input['last_maintenance_date']) &&
@@ -416,6 +424,11 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
             return false;
         }
     }
+    if (array_key_exists('groups_id', $input)) {
+        if (!$this->validateGroup($input)) {
+            return false;
+        }
+    }
     if (array_key_exists('is_recurring', $input)) {
         $input['is_recurring'] = !empty($input['is_recurring']) ? 1 : 0;
     }
@@ -458,6 +471,37 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM {
     if (!$item->getFromDB((int)$input['items_id'])) {
         Session::addMessageAfterRedirect(
             __('Selected item was not found', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    return true;
+   }
+
+   /**
+    * Valida se um grupo responsável válido foi informado. O grupo é
+    * obrigatório (diferente do técnico, opcional) por ser a referência de
+    * responsabilidade que não muda quando um técnico troca de time.
+    * Validates that a valid responsible group was given. The group is
+    * required (unlike the technician, which is optional) since it's the
+    * ownership reference that doesn't change when a technician switches teams.
+    */
+   private function validateGroup($input) {
+    if (empty($input['groups_id']) || (int)$input['groups_id'] <= 0) {
+        Session::addMessageAfterRedirect(
+            __('You must select a responsible group', 'preventivemaintenance'),
+            false,
+            ERROR
+        );
+        return false;
+    }
+
+    $group = new Group();
+    if (!$group->getFromDB((int)$input['groups_id'])) {
+        Session::addMessageAfterRedirect(
+            __('Selected group was not found', 'preventivemaintenance'),
             false,
             ERROR
         );

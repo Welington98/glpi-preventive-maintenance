@@ -489,20 +489,26 @@ function createMaintenanceTicket($maintenance_id, $items_id, $itemtype, $mainten
     // Convenção atual do GLPI (10+/11) para atores do chamado: array estruturado
     // _actors[tipo][] = ['itemtype' => ..., 'items_id' => ...]. A antiga chave
     // _observers usada aqui antes nunca foi processada por Ticket::add() no GLPI 11
-    // (verificado no código-fonte) — o observador nunca era realmente adicionado.
+    // (verificado no código-fonte) — nunca era realmente adicionado.
+    // Técnico/grupo entram como "assign" (atribuído), não "observer": eles são
+    // os responsáveis reais pela manutenção, então entram na fila de trabalho
+    // deles e contam para o SLA de atendimento — não são só notificados.
     // Current GLPI (10+/11) convention for ticket actors: structured array
     // _actors[type][] = ['itemtype' => ..., 'items_id' => ...]. The old _observers
     // key previously used here was never processed by Ticket::add() on GLPI 11
-    // (verified in source) — the observer was never actually being added.
-    $observers = [];
+    // (verified in source) — it was never actually being added.
+    // Technician/group are added as "assign", not "observer": they are the
+    // real people responsible for the maintenance, so they land in their own
+    // work queue and count toward SLA — they're not just notified.
+    $assignees = [];
     if (!empty($technician_id)) {
-        $observers[] = ['itemtype' => 'User', 'items_id' => (int)$technician_id];
+        $assignees[] = ['itemtype' => 'User', 'items_id' => (int)$technician_id];
     }
     if (!empty($groups_id)) {
-        $observers[] = ['itemtype' => 'Group', 'items_id' => (int)$groups_id];
+        $assignees[] = ['itemtype' => 'Group', 'items_id' => (int)$groups_id];
     }
-    if (!empty($observers)) {
-        $input['_actors']['observer'] = $observers;
+    if (!empty($assignees)) {
+        $input['_actors']['assign'] = $assignees;
     }
 
     try {

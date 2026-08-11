@@ -205,6 +205,18 @@ if (isset($_POST['add'])) {
             throw new Exception(__('O item selecionado não pertence à entidade escolhida.'));
         }
 
+        // Validação do grupo responsável (obrigatório — é a referência estável
+        // de responsabilidade, diferente do técnico, que pode mudar).
+        // Responsible group validation (required — it's the stable ownership
+        // reference, unlike the technician, who can change).
+        if (empty($_POST['groups_id'])) {
+            throw new Exception(__('Selecione um grupo responsável.'));
+        }
+        $group = new Group();
+        if (!$group->getFromDB((int)$_POST['groups_id'])) {
+            throw new Exception(__('Grupo selecionado não encontrado.'));
+        }
+
         // Verifica se já existe manutenção para este item (mesmo tipo + mesmo id)
         // Checks if maintenance already exists for this item (same type + same id)
         $existing = $pm->find([
@@ -624,9 +636,9 @@ Html::header(
                     </div>
 
                     <div class='form-section'>
-                        <label for='groups_id'><?php echo __('Grupo Responsável'); ?></label>
-                        <select name='groups_id' id='groups_id' class='form-select'>
-                            <option value='0'><?php echo __('Selecione um grupo responsável'); ?></option>
+                        <label for='groups_id'><?php echo __('Grupo Responsável'); ?> <span class='required'>*</span></label>
+                        <select name='groups_id' id='groups_id' class='form-select' required>
+                            <option value=''><?php echo __('Selecione um grupo responsável'); ?></option>
                             <?php
                             foreach ($all_groups as $grp) {
                                 $selected = ($is_edit && ($item_data['groups_id'] ?? 0) == $grp['id']) ? 'selected' : '';
@@ -635,7 +647,7 @@ Html::header(
                             ?>
                         </select>
                         <small class="text-muted d-block mt-1">
-                            <?php echo __('Pode ser usado no lugar do técnico ou junto com ele — o grupo costuma ser mais estável ao longo do tempo.'); ?>
+                            <?php echo __('O técnico é opcional (pode mudar com o tempo); o grupo é obrigatório e permanece a referência estável de responsabilidade.'); ?>
                         </small>
                     </div>
 
