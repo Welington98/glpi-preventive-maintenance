@@ -13,7 +13,7 @@
  * sob os termos da Licença Pública Geral GNU conforme publicada pela
  * Free Software Foundation; ou versão 2 da Licença, ou
  * (a seu critério) qualquer versão posterior.
- * 
+ *
  * Manutenção Preventiva é distribuído na esperança de que seja útil,
  * mas SEM QUALQUER GARANTIA; sem mesmo a garantia implícita de
  * COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM DETERMINADO FIM. Veja o
@@ -41,7 +41,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * Preventive Maintenance is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -55,13 +55,14 @@
  * @link      [Your Plugin URL or GitHub Repository]
  * -------------------------------------------------------------------------
  */
- 
- 
+
+
 
 
 //Define a versão e informações básicas do plugin
 //Defines the plugin version and basic information
-function plugin_version_preventivemaintenance() {
+function plugin_version_preventivemaintenance()
+{
     return [
         'name'           => 'Manutenção Preventiva',
         'version'        => '1.0.0',
@@ -73,15 +74,16 @@ function plugin_version_preventivemaintenance() {
         'requirements'   => [
             'glpi' => [
                 'min' => '10.0.0',
-                'max' => '11.9.99'
-            ]
-        ]
+                'max' => '11.9.99',
+            ],
+        ],
     ];
 }
 
 //Verifica os pré-requisitos para instalação do plugin (versão do GLPI)
 //Checks plugin installation prerequisites (GLPI version)
-function plugin_preventivemaintenance_check_prerequisites() {
+function plugin_preventivemaintenance_check_prerequisites()
+{
     if (version_compare(GLPI_VERSION, '10.0.0', '<')) {
         echo "This plugin requires GLPI version 10.0.0 or higher";
         return false;
@@ -91,18 +93,20 @@ function plugin_preventivemaintenance_check_prerequisites() {
 
 //Verifica a configuração do plugin (sempre retorna true neste caso)
 //Checks plugin configuration (always returns true in this case)
-function plugin_preventivemaintenance_check_config($verbose = false) {
+function plugin_preventivemaintenance_check_config($verbose = false)
+{
     return true;
 }
 
 //Função de instalação do plugin - cria tabelas, registra plugin e configura permissões
 //Plugin installation function - creates tables, registers plugin and configures permissions
-function plugin_preventivemaintenance_install() {
+function plugin_preventivemaintenance_install()
+{
     global $DB;
 
     // 1. Criar tabelas se não existirem
     // 1. Create tables if they don't exist
-    
+
     // Tabela principal de manutenções preventivas
     if (!$DB->tableExists('glpi_plugin_preventivemaintenance_preventivemaintenances')) {
         $query = "CREATE TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances` (
@@ -140,33 +144,33 @@ function plugin_preventivemaintenance_install() {
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_preventivemaintenances', 'is_recurring')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances`
-                 ADD COLUMN `is_recurring` tinyint(1) UNSIGNED NOT NULL DEFAULT '0' AFTER `maintenance_interval`"
+                 ADD COLUMN `is_recurring` tinyint(1) UNSIGNED NOT NULL DEFAULT '0' AFTER `maintenance_interval`",
             );
         }
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_preventivemaintenances', 'recurrence_months')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances`
-                 ADD COLUMN `recurrence_months` int(11) UNSIGNED NOT NULL DEFAULT '3' AFTER `is_recurring`"
+                 ADD COLUMN `recurrence_months` int(11) UNSIGNED NOT NULL DEFAULT '3' AFTER `is_recurring`",
             );
         }
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_preventivemaintenances', 'tickettemplates_id')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances`
-                 ADD COLUMN `tickettemplates_id` int(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `is_recurring`"
+                 ADD COLUMN `tickettemplates_id` int(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `is_recurring`",
             );
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances`
-                 ADD KEY `tickettemplates_id` (`tickettemplates_id`)"
+                 ADD KEY `tickettemplates_id` (`tickettemplates_id`)",
             );
         }
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_preventivemaintenances', 'groups_id')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances`
-                 ADD COLUMN `groups_id` int(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `technician_id`"
+                 ADD COLUMN `groups_id` int(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `technician_id`",
             );
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_preventivemaintenances`
-                 ADD KEY `groups_id` (`groups_id`)"
+                 ADD KEY `groups_id` (`groups_id`)",
             );
         }
     }
@@ -197,7 +201,7 @@ function plugin_preventivemaintenance_install() {
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_tickets', 'itemtype')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_tickets`
-                 ADD COLUMN `itemtype` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Computer' AFTER `computer_id`"
+                 ADD COLUMN `itemtype` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Computer' AFTER `computer_id`",
             );
         }
 
@@ -207,17 +211,17 @@ function plugin_preventivemaintenance_install() {
             // Ensures itemtype is filled before renaming the column
             $DB->doQuery(
                 "UPDATE `glpi_plugin_preventivemaintenance_tickets`
-                 SET `itemtype` = 'Computer' WHERE `itemtype` = '' OR `itemtype` IS NULL"
+                 SET `itemtype` = 'Computer' WHERE `itemtype` = '' OR `itemtype` IS NULL",
             );
             // Rename preserva os dados existentes
             // Rename preserves existing data
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_tickets`
-                 CHANGE COLUMN `computer_id` `items_id` int(11) NOT NULL"
+                 CHANGE COLUMN `computer_id` `items_id` int(11) NOT NULL",
             );
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_tickets`
-                 ADD KEY `item` (`items_id`, `itemtype`)"
+                 ADD KEY `item` (`items_id`, `itemtype`)",
             );
         }
 
@@ -230,11 +234,11 @@ function plugin_preventivemaintenance_install() {
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_tickets', 'maintenance_id')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_tickets`
-                 ADD COLUMN `maintenance_id` int(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `ticket_id`"
+                 ADD COLUMN `maintenance_id` int(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `ticket_id`",
             );
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_tickets`
-                 ADD KEY `maintenance_id` (`maintenance_id`)"
+                 ADD KEY `maintenance_id` (`maintenance_id`)",
             );
             // Preenche o vínculo de linhas existentes por correspondência de
             // item+nome (melhor esforço, para não perder o histórico já gravado).
@@ -247,13 +251,13 @@ function plugin_preventivemaintenance_install() {
                      AND pm.`itemtype` = pmt.`itemtype`
                      AND pm.`name` = pmt.`maintenance_name`
                  SET pmt.`maintenance_id` = pm.`id`
-                 WHERE pmt.`maintenance_id` = 0"
+                 WHERE pmt.`maintenance_id` = 0",
             );
         }
         if (!$DB->fieldExists('glpi_plugin_preventivemaintenance_tickets', 'resolved_at')) {
             $DB->doQuery(
                 "ALTER TABLE `glpi_plugin_preventivemaintenance_tickets`
-                 ADD COLUMN `resolved_at` datetime DEFAULT NULL AFTER `date_creation`"
+                 ADD COLUMN `resolved_at` datetime DEFAULT NULL AFTER `date_creation`",
             );
         }
     }
@@ -270,7 +274,7 @@ function plugin_preventivemaintenance_install() {
             PRIMARY KEY (`id`),
             UNIQUE KEY `name` (`name`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-        
+
         $DB->doQuery($query);
     }
 
@@ -281,7 +285,7 @@ function plugin_preventivemaintenance_install() {
         $plugin_id = $plugin->add([
             'directory' => 'preventivemaintenance',
             'name'      => 'Manutenção Preventiva',
-            'state'     => Plugin::NOTINSTALLED
+            'state'     => Plugin::NOTINSTALLED,
         ]);
     } else {
         $plugin_id = $plugin->getID();
@@ -307,11 +311,11 @@ function plugin_preventivemaintenance_install() {
     // plugin rights, only glpi_profiles' native fields).
     $profile = new Profile();
     foreach ($profile->find() as $prof) {
-        $rights = match($prof['name']) {
+        $rights = match ($prof['name']) {
             'Super-Admin' => 31,  // Todos direitos
             'Admin', 'Supervisor' => 7,  // Ler+Criar+Atualizar
             'Technician' => 3,    // Ler+Criar
-            default => 1          // Ler
+            default => 1,          // Ler
         };
 
         ProfileRight::updateProfileRights($prof['id'], [$rightname => $rights]);
@@ -333,7 +337,8 @@ function plugin_preventivemaintenance_install() {
 // should not delete already-registered data. If the plugin is reinstalled
 // later, plugin_preventivemaintenance_install() finds the existing tables
 // and keeps working normally (idempotent guards).
-function plugin_preventivemaintenance_uninstall() {
+function plugin_preventivemaintenance_uninstall()
+{
     global $DB;
 
     // 1. Remover direitos
@@ -352,22 +357,23 @@ function plugin_preventivemaintenance_uninstall() {
 }
 //Inicializa o plugin e configura hooks (ganchos) para integração com o GLPI
 //Initializes the plugin and configures hooks for GLPI integration
-function plugin_init_preventivemaintenance() {
+function plugin_init_preventivemaintenance()
+{
     global $PLUGIN_HOOKS;
 
     $PLUGIN_HOOKS['csrf_compliant']['preventivemaintenance'] = true;
     $PLUGIN_HOOKS['config_page']['preventivemaintenance'] = 'front/preventivemaintenance.php';
-    $PLUGIN_HOOKS["menu_toadd"]['preventivemaintenance'] = array('plugins'  => 'PluginPreventivemaintenanceMenu');
+    $PLUGIN_HOOKS["menu_toadd"]['preventivemaintenance'] = ['plugins'  => 'PluginPreventivemaintenanceMenu'];
     $PLUGIN_HOOKS['rights']['preventivemaintenance'] = 'plugin_preventivemaintenance_getRights';
     $PLUGIN_HOOKS['menu_entry_icon']['preventivemaintenance'] = Plugin::getWebDir('preventivemaintenance', false) . '/pics/logopm.png';
-    
+
     $PLUGIN_HOOKS['use_massive_action']['preventivemaintenance'] = true;
     $PLUGIN_HOOKS['search_options']['preventivemaintenance'] = true;
 
     $PLUGIN_HOOKS['item_update']['preventivemaintenance'] = [
         'Ticket' => ['PluginPreventivemaintenancePreventivemaintenance', 'updateMaintenanceAfterTicket']];
-        
-        
+
+
     $PLUGIN_HOOKS['post_init']['preventivemaintenance'] = 'plugin_preventivemaintenance_postinit';
     $PLUGIN_HOOKS['user_login']['preventivemaintenance'] = ['PluginPreventivemaintenanceProfile', 'userLoginHook'];
 
@@ -378,17 +384,18 @@ function plugin_init_preventivemaintenance() {
 
 //Define os direitos/permissões disponíveis para o plugin
 //Defines available rights/permissions for the plugin
-function plugin_preventivemaintenance_getRights() {
+function plugin_preventivemaintenance_getRights()
+{
     return [
         ['itemtype' => 'PluginPreventivemaintenancePreventivemaintenance',
-         'label'    => __('Manutenção Preventiva'),
-         'field'    => 'plugin_preventivemaintenance',
-         'rights'   => [
-             READ    => __('Read'),
-             CREATE  => __('Create'),
-             UPDATE  => __('Update'),
-             DELETE  => __('Delete'),
-             PURGE   => __('Purge')
-         ]]
+            'label'    => __('Manutenção Preventiva'),
+            'field'    => 'plugin_preventivemaintenance',
+            'rights'   => [
+                READ    => __('Read'),
+                CREATE  => __('Create'),
+                UPDATE  => __('Update'),
+                DELETE  => __('Delete'),
+                PURGE   => __('Purge'),
+            ]],
     ];
 }

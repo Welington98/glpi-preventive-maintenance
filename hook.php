@@ -13,7 +13,7 @@
  * sob os termos da Licença Pública Geral GNU conforme publicada pela
  * Free Software Foundation; ou versão 2 da Licença, ou
  * (a seu critério) qualquer versão posterior.
- * 
+ *
  * Manutenção Preventiva é distribuído na esperança de que seja útil,
  * mas SEM QUALQUER GARANTIA; sem mesmo a garantia implícita de
  * COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM DETERMINADO FIM. Veja o
@@ -41,7 +41,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * Preventive Maintenance is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -61,20 +61,21 @@
 //Verifica se a constante GLPI_ROOT está definida para segurança
 //Checks if GLPI_ROOT constant is defined for security
 if (!defined('GLPI_ROOT')) {
-   die("Sorry. You can't access this file directly");
+    die("Sorry. You can't access this file directly");
 }
 
 //Retorna as classes do plugin e seus arquivos correspondentes
 //Returns plugin classes and their corresponding files
-function plugin_preventivemaintenance_getClasses() {
-   return [
-      'PluginPreventivemaintenancePreventivemaintenance' => 'inc/preventivemaintenance.class.php'
-   ];
+function plugin_preventivemaintenance_getClasses()
+{
+    return [
+        'PluginPreventivemaintenancePreventivemaintenance' => 'inc/preventivemaintenance.class.php',
+    ];
 }
 
 //Indica que o plugin é compatível com proteção CSRF
 //Indicates the plugin is CSRF protection compliant
-function plugin_preventivemaintenance_isCSRFCompliant() {
-   return true;
+function plugin_preventivemaintenance_isCSRFCompliant()
+{
+    return true;
 }
-

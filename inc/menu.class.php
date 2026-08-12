@@ -13,7 +13,7 @@
  * sob os termos da Licença Pública Geral GNU conforme publicada pela
  * Free Software Foundation; ou versão 2 da Licença, ou
  * (a seu critério) qualquer versão posterior.
- * 
+ *
  * Manutenção Preventiva é distribuído na esperança de que seja útil,
  * mas SEM QUALQUER GARANTIA; sem mesmo a garantia implícita de
  * COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM DETERMINADO FIM. Veja o
@@ -41,7 +41,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * Preventive Maintenance is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -59,27 +59,30 @@
 //Verificação de segurança padrão
 //Standard security check
 if (!defined('GLPI_ROOT')) {
-   die("Sorry. You can't access this file directly");
+    die("Sorry. You can't access this file directly");
 }
 
 //Classe que define o menu do plugin
 //Class that defines the plugin menu
-class PluginPreventivemaintenanceMenu extends CommonGLPI {
+class PluginPreventivemaintenanceMenu extends CommonGLPI
+{
     //Retorna o nome do menu
     //Returns menu name
-    static function getMenuName() {
+    public static function getMenuName()
+    {
         return __('Manutenção Preventiva', 'preventivemaintenance');
     }
 
     //Define o conteúdo completo do menu
     //Defines complete menu content
-    static function getMenuContent() {
+    public static function getMenuContent()
+    {
         $menu = [
             'title' => self::getMenuName(),
             'page'  => PluginPreventivemaintenancePreventivemaintenance::getSearchURL(false),
-            'icon'  => 'fas fa-calendar-check'
+            'icon'  => 'fas fa-calendar-check',
         ];
-        
+
         //Adiciona opções se o usuário tiver permissão de visualização
         //Adds options if user has view permission
         if (PluginPreventivemaintenancePreventivemaintenance::canView()) {
@@ -87,11 +90,11 @@ class PluginPreventivemaintenanceMenu extends CommonGLPI {
                 'preventivemaintenance' => [
                     'title' => PluginPreventivemaintenancePreventivemaintenance::getTypeName(2),
                     'page'  => PluginPreventivemaintenancePreventivemaintenance::getSearchURL(false),
-                    'icon'  => 'fas fa-calendar-check'
-                ]
+                    'icon'  => 'fas fa-calendar-check',
+                ],
             ];
         }
-        
+
         return $menu;
     }
 }

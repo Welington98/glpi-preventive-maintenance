@@ -13,7 +13,7 @@
  * sob os termos da Licença Pública Geral GNU conforme publicada pela
  * Free Software Foundation; ou versão 2 da Licença, ou
  * (a seu critério) qualquer versão posterior.
- * 
+ *
  * Manutenção Preventiva é distribuído na esperança de que seja útil,
  * mas SEM QUALQUER GARANTIA; sem mesmo a garantia implícita de
  * COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM DETERMINADO FIM. Veja o
@@ -41,7 +41,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * Preventive Maintenance is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -59,115 +59,120 @@
 // Verificação de segurança
 // Security check
 if (!defined('GLPI_ROOT')) {
-   die("Sorry. You can't access this file directly");
+    die("Sorry. You can't access this file directly");
 }
 
 // Classe para gerenciar perfil/permissões do plugin
 // Class to manage plugin profile/permissions
-class PluginPreventivemaintenanceProfile extends Profile {
-   
-   public static $rightname = 'profile';
+class PluginPreventivemaintenanceProfile extends Profile
+{
+    public static $rightname = 'profile';
 
-   // Define o nome da aba para perfis
-   // Defines tab name for profiles
-   public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0) {
-      if ($item->getType() == 'Profile' && $item->getField('interface') != 'helpdesk') {
-         return __('Manutenção Preventiva', 'preventivemaintenance');
-      }
-      return '';
-   }
+    // Define o nome da aba para perfis
+    // Defines tab name for profiles
+    public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
+    {
+        if ($item->getType() == 'Profile' && $item->getField('interface') != 'helpdesk') {
+            return __('Manutenção Preventiva', 'preventivemaintenance');
+        }
+        return '';
+    }
 
     // Adicione esta função à sua classe
-    public static function userLoginHook($user) {
+    public static function userLoginHook($user)
+    {
         self::initProfile();
     }
 
 
-   // Exibe o conteúdo da aba de perfil
-   // Displays profile tab content
-   public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0) {
-      if ($item->getType() == 'Profile') {
-         $prof = new self();
-         $prof->showForm($item->getID());
-      }
-      return true;
-   }
+    // Exibe o conteúdo da aba de perfil
+    // Displays profile tab content
+    public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0)
+    {
+        if ($item->getType() == 'Profile') {
+            $prof = new self();
+            $prof->showForm($item->getID());
+        }
+        return true;
+    }
 
-   // Mostra formulário de direitos
-   // Shows rights form
-   public function showForm($profiles_id, $openform = true, $closeform = true) {
-      global $CFG_GLPI;
+    // Mostra formulário de direitos
+    // Shows rights form
+    public function showForm($profiles_id, $openform = true, $closeform = true)
+    {
+        global $CFG_GLPI;
 
-      echo "<div class='firstbloc'>";
-      $canedit = Session::haveRightsOr(self::$rightname, [CREATE, UPDATE]);
+        echo "<div class='firstbloc'>";
+        $canedit = Session::haveRightsOr(self::$rightname, [CREATE, UPDATE]);
 
-      if ($canedit && $openform) {
-         echo "<form method='post' action='" . Toolbox::getItemTypeFormURL('Profile') . "'>";
-      }
+        if ($canedit && $openform) {
+            echo "<form method='post' action='" . Toolbox::getItemTypeFormURL('Profile') . "'>";
+        }
 
-      $profile = new Profile();
-      $profile->getFromDB($profiles_id);
+        $profile = new Profile();
+        $profile->getFromDB($profiles_id);
 
-      $rights = [
-         [
-            'itemtype' => 'PluginPreventivemaintenancePreventivemaintenance',
-            'label'    => __('Manutenção Preventiva', 'preventivemaintenance'),
-            'field'    => 'plugin_preventivemaintenance'
-         ]
-      ];
+        $rights = [
+            [
+                'itemtype' => 'PluginPreventivemaintenancePreventivemaintenance',
+                'label'    => __('Manutenção Preventiva', 'preventivemaintenance'),
+                'field'    => 'plugin_preventivemaintenance',
+            ],
+        ];
 
-      $profile->displayRightsChoiceMatrix(
-         $rights,
-         [
-            'canedit'       => $canedit,
-            'default_class' => 'tab_bg_2',
-            'title'         => __('General')
-         ]
-      );
+        $profile->displayRightsChoiceMatrix(
+            $rights,
+            [
+                'canedit'       => $canedit,
+                'default_class' => 'tab_bg_2',
+                'title'         => __('General'),
+            ],
+        );
 
-      echo "</table>";
+        echo "</table>";
 
-      if ($canedit && $closeform) {
-         echo "<div class='center'>";
-         echo Html::hidden('id', ['value' => $profiles_id]);
-         echo Html::submit(_sx('button', 'Save'), ['name' => 'update', 'class' => 'btn btn-primary']);
-         echo "</div>";
-         Html::closeForm();
-      }
+        if ($canedit && $closeform) {
+            echo "<div class='center'>";
+            echo Html::hidden('id', ['value' => $profiles_id]);
+            echo Html::submit(_sx('button', 'Save'), ['name' => 'update', 'class' => 'btn btn-primary']);
+            echo "</div>";
+            Html::closeForm();
+        }
 
-      echo "</div>";
-   }
+        echo "</div>";
+    }
 
-   // Define os direitos padrão para novos perfis
-   // Defines default rights for new profiles
-   public static function initProfile() {
-   global $DB;
+    // Define os direitos padrão para novos perfis
+    // Defines default rights for new profiles
+    public static function initProfile()
+    {
+        global $DB;
 
-   $profile = new self();
-   $dbu = new DbUtils();
+        $profile = new self();
+        $dbu = new DbUtils();
 
-   $default_rights = ['plugin_preventivemaintenance'];
+        $default_rights = ['plugin_preventivemaintenance'];
 
-   // Adiciona direitos para todos os perfis se não existirem
-   foreach ($default_rights as $right) {
-      if ($dbu->countElementsInTable("glpi_profilerights", ["name" => $right]) == 0) {
-         ProfileRight::addProfileRights([$right]);
-         
-         // Define permissões padrão para todos os perfis
-         foreach ($DB->request('glpi_profiles') as $profile_data) {
-            $rights = 0;
-            // Define permissões padrão baseadas no tipo de perfil
-            if ($profile_data['interface'] == 'central') {
-               $rights = CREATE | READ | UPDATE | DELETE; // Ajuste conforme necessário
+        // Adiciona direitos para todos os perfis se não existirem
+        foreach ($default_rights as $right) {
+            if ($dbu->countElementsInTable("glpi_profilerights", ["name" => $right]) == 0) {
+                ProfileRight::addProfileRights([$right]);
+
+                // Define permissões padrão para todos os perfis
+                foreach ($DB->request('glpi_profiles') as $profile_data) {
+                    $rights = 0;
+                    // Define permissões padrão baseadas no tipo de perfil
+                    if ($profile_data['interface'] == 'central') {
+                        $rights = CREATE | READ | UPDATE | DELETE; // Ajuste conforme necessário
+                    }
+                    $DB->updateOrInsert('glpi_profilerights', [
+                        'rights' => $rights,
+                    ], [
+                        'profiles_id' => $profile_data['id'],
+                        'name' => $right,
+                    ]);
+                }
             }
-            $DB->updateOrInsert('glpi_profilerights', [
-               'rights' => $rights
-            ], [
-               'profiles_id' => $profile_data['id'],
-               'name' => $right
-            ]);
-         }
-      }
-   }
-}
+        }
+    }
 }
