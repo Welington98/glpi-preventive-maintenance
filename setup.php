@@ -319,37 +319,35 @@ function plugin_preventivemaintenance_install() {
 
     return true;
 }
-//Função de desinstalação - remove tabelas, direitos e registro do plugin
-//Uninstallation function - removes tables, rights and plugin registration
+//Função de desinstalação - remove direitos e registro do plugin
+//Uninstallation function - removes rights and plugin registration
+//
+// As tabelas de dados do plugin (manutenções cadastradas, histórico de
+// chamados e configuração) são propositalmente preservadas: desinstalar o
+// plugin não deve apagar dados já cadastrados. Se o plugin for reinstalado
+// depois, plugin_preventivemaintenance_install() encontra as tabelas
+// existentes e continua funcionando normalmente (guardas idempotentes).
+//
+// The plugin's data tables (registered maintenances, ticket history and
+// configuration) are intentionally preserved: uninstalling the plugin
+// should not delete already-registered data. If the plugin is reinstalled
+// later, plugin_preventivemaintenance_install() finds the existing tables
+// and keeps working normally (idempotent guards).
 function plugin_preventivemaintenance_uninstall() {
     global $DB;
-    
-    // 1. Remover tabelas
-    // 1. Remove tables
-    $tables = [
-        'glpi_plugin_preventivemaintenance_preventivemaintenances',
-        'glpi_plugin_preventivemaintenance_tickets',
-        'glpi_plugin_preventivemaintenance_config'
-    ];
-    
-    foreach ($tables as $table) {
-        if ($DB->tableExists($table)) {
-            $DB->doQuery("DROP TABLE IF EXISTS `$table`");
-        }
-    }
-    
-    // 2. Remover direitos
-    // 2. Remove rights
+
+    // 1. Remover direitos
+    // 1. Remove rights
     $rightname = 'plugin_preventivemaintenance';
     $DB->delete('glpi_profilerights', ['name' => $rightname]);
-    
-    // 3. Remover o plugin
-    // 3. Remove the plugin
+
+    // 2. Remover o plugin
+    // 2. Remove the plugin
     $plugin = new Plugin();
     if ($plugin->getFromDBbyDir('preventivemaintenance')) {
         $plugin->delete(['id' => $plugin->getID()]);
     }
-    
+
     return true;
 }
 //Inicializa o plugin e configura hooks (ganchos) para integração com o GLPI
