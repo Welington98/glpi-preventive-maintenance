@@ -1,0 +1,12 @@
+parameters:
+    level: 1
+    paths:
+        - inc
+        - front
+        - hook
+        - setup.php
+        - hook.php
+    excludePaths:
+        - vendor (?)
+        - dist (?)
+        - storage (?)

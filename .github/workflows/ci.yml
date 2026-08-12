@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+defaults:
+  run:
+    working-directory: .
+
+jobs:
+  lint:
+    name: Lint PHP (${{ matrix.php-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.2', '8.3', '8.4']
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: curl, json
+          coverage: none
+
+      - name: Verificar sintaxe PHP
+        run: |
+          find . -name "*.php" -not -path "./vendor/*" -print0 \
+            | xargs -0 -n1 -P4 php -l
+
+  code-quality:
+    name: Qualidade de código
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json
+          coverage: none
+
+      - name: Instalar dependências
+        run: composer install --no-interaction --prefer-dist
+
+      - name: PHP-CS-Fixer (verificação de estilo)
+        run: composer cs-check
+        env:
+          PHP_CS_FIXER_IGNORE_ENV: '1'
+
+      - name: PHPStan (análise estática)
+        run: composer phpstan
+        continue-on-error: true
+
+  tests:
+    name: Testes unitários
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json
+          coverage: none
+
+      - name: Instalar dependências
+        run: composer install --no-interaction --prefer-dist
+
+      - name: PHPUnit
+        run: composer test

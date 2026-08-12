@@ -1,0 +1,49 @@
+{
+  "branches": [
+    "main"
+  ],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "tools/bump-version.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "tools/release.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md",
+          "setup.php",
+          "manifest.json"
+        ],
+        "message": "chore(release): publish version ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "dist/glpi-preventivemaintenance-*.tar.bz2",
+            "label": "Plugin Manutenção Preventiva ${nextRelease.version} — pacote instalável no GLPI"
+          }
+        ]
+      }
+    ]
+  ]
+}
