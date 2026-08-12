@@ -1104,10 +1104,10 @@ Html::header(
                     <div class="filter-title"><?= __('Entity') ?></div>
                     <?php
                     $entity_options = [
-'name' => 'entity',
-'value' => $filters['entity'],
-'display' => false,
-'width' => '100%',
+                        'name' => 'entity',
+                        'value' => $filters['entity'],
+                        'display' => false,
+                        'width' => '100%',
                     ];
 echo Entity::dropdown($entity_options);
 ?>
