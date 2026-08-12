@@ -1,0 +1,48 @@
+name: CS Fix
+
+# Workflow manual: aplica o PHP-CS-Fixer no plugin e commita as
+# correções de estilo no branch selecionado.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cs-fix:
+    name: Aplicar PHP-CS-Fixer
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json
+          coverage: none
+
+      - name: Instalar dependências
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Aplicar correções de estilo
+        run: composer cs-fix
+        env:
+          PHP_CS_FIXER_IGNORE_ENV: '1'
+
+      - name: Commitar correções
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nenhuma correção de estilo necessária."
+          else
+            git commit -m "style: aplicar padrões do PHP-CS-Fixer (PER-CS 2.0)"
+            git push
+          fi

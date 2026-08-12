@@ -13,7 +13,7 @@
  * sob os termos da Licença Pública Geral GNU conforme publicada pela
  * Free Software Foundation; ou versão 2 da Licença, ou
  * (a seu critério) qualquer versão posterior.
- * 
+ *
  * Manutenção Preventiva é distribuído na esperança de que seja útil,
  * mas SEM QUALQUER GARANTIA; sem mesmo a garantia implícita de
  * COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM DETERMINADO FIM. Veja o
@@ -41,7 +41,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * Preventive Maintenance is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -55,9 +55,9 @@
  * @link      [Your Plugin URL or GitHub Repository]
  * -------------------------------------------------------------------------
  */
- 
- 
- 
+
+
+
 
 // Inclui arquivos necessários do GLPI e verifica permissões
 // Includes required GLPI files and checks permissions
@@ -73,7 +73,7 @@ $ticket_history = [];
 // Se estiver editando, carrega os dados existentes
 // If editing, loads existing data
 if ($is_edit) {
-    $id = (int)$_GET['id'];
+    $id = (int) $_GET['id'];
     if (!$pm->getFromDB($id)) {
         Session::addMessageAfterRedirect(__('Registro não encontrado'), false, ERROR);
         Html::redirect('preventivemaintenance.php');
@@ -97,9 +97,9 @@ if ($is_edit) {
             'glpi_tickets' => [
                 'ON' => [
                     'glpi_plugin_preventivemaintenance_tickets' => 'ticket_id',
-                    'glpi_tickets' => 'id'
-                ]
-            ]
+                    'glpi_tickets' => 'id',
+                ],
+            ],
         ],
         'WHERE' => ['glpi_plugin_preventivemaintenance_tickets.maintenance_id' => $id],
         'ORDER' => 'glpi_plugin_preventivemaintenance_tickets.date_creation DESC',
@@ -129,7 +129,7 @@ foreach ($selected_profiles as $profile_name) {
     if (!empty($technician_profile)) {
         $technician_profile_id = key($technician_profile);
         $profile_users = $profile_user->find(['profiles_id' => $technician_profile_id]);
-        
+
         foreach ($profile_users as $pu) {
             $user->getFromDB($pu['users_id']);
             if ($user->fields['is_active'] && !isset($technicians[$user->getID()])) {
@@ -167,10 +167,10 @@ if (isset($_POST['add'])) {
 
         // Validação da entidade
         // Entity validation
-        
-        $selected_entity_id = (int)$_POST['entities_id'];
+
+        $selected_entity_id = (int) $_POST['entities_id'];
         error_log("[ENTIDADE] Valor recebido: " . $selected_entity_id);
-        
+
         if ($selected_entity_id < 0) {
             throw new Exception(__('Selecione uma entidade válida.'));
         }
@@ -193,7 +193,7 @@ if (isset($_POST['add'])) {
             throw new Exception(__('Selecione um item válido.'));
         }
 
-        $items_id = (int)$_POST['items_id'];
+        $items_id = (int) $_POST['items_id'];
         $item = new $itemtype();
         if (!$item->getFromDB($items_id)) {
             throw new Exception(__('Item selecionado não encontrado.'));
@@ -213,7 +213,7 @@ if (isset($_POST['add'])) {
             throw new Exception(__('Selecione um grupo responsável.'));
         }
         $group = new Group();
-        if (!$group->getFromDB((int)$_POST['groups_id'])) {
+        if (!$group->getFromDB((int) $_POST['groups_id'])) {
             throw new Exception(__('Grupo selecionado não encontrado.'));
         }
 
@@ -221,7 +221,7 @@ if (isset($_POST['add'])) {
         // Checks if maintenance already exists for this item (same type + same id)
         $existing = $pm->find([
             'items_id' => $items_id,
-            'itemtype' => $itemtype
+            'itemtype' => $itemtype,
         ]);
 
         if ($is_edit) {
@@ -232,7 +232,7 @@ if (isset($_POST['add'])) {
             throw new Exception(sprintf(
                 __('Já existe uma manutenção cadastrada para o item %s (ID: %d)'),
                 $item->getName(),
-                $items_id
+                $items_id,
             ));
         }
 
@@ -241,8 +241,8 @@ if (isset($_POST['add'])) {
         // Resolves the recurrence value: "custom" uses the custom month-count
         // field instead of a fixed preset.
         $recurrence_months = ($_POST['recurrence_months'] ?? '') === 'custom'
-            ? (int)($_POST['recurrence_months_custom'] ?? 0)
-            : (int)($_POST['recurrence_months'] ?? 3);
+            ? (int) ($_POST['recurrence_months_custom'] ?? 0)
+            : (int) ($_POST['recurrence_months'] ?? 3);
 
         // Prepara os dados para gravação
         // Prepares data for saving
@@ -250,8 +250,8 @@ if (isset($_POST['add'])) {
             'name' => $_POST['name'] ?? '',
             'entities_id' => $selected_entity_id,
             'is_recursive' => 0,
-            'technician_id' => (int)$_POST['technician_id'],
-            'groups_id' => (int)($_POST['groups_id'] ?? 0),
+            'technician_id' => (int) $_POST['technician_id'],
+            'groups_id' => (int) ($_POST['groups_id'] ?? 0),
             'items_id' => $items_id,
             'itemtype' => $itemtype,
             // Campo opcional: string vazia (não ausente) quebra a coluna DATE em
@@ -263,7 +263,7 @@ if (isset($_POST['add'])) {
             'maintenance_interval' => 30,
             'is_recurring' => isset($_POST['is_recurring']) ? 1 : 0,
             'recurrence_months' => $recurrence_months,
-            'tickettemplates_id' => (int)($_POST['tickettemplates_id'] ?? 0),
+            'tickettemplates_id' => (int) ($_POST['tickettemplates_id'] ?? 0),
         ];
 
         // Cálculo do intervalo de manutenção
@@ -298,7 +298,7 @@ if (isset($_POST['add'])) {
         }
 
         Html::redirect('preventivemaintenance.php');
-        
+
     } catch (Exception $e) {
         error_log("[ERRO] Processamento: " . $e->getMessage());
         Session::addMessageAfterRedirect($e->getMessage(), false, ERROR);
@@ -326,7 +326,7 @@ $entities = $entity->find(['id' => $_SESSION['glpiactiveentities']], 'completena
 // <select> when there are many entities).
 $entities_name_to_id = [];
 foreach ($entities as $ent) {
-    $entities_name_to_id[$ent['completename']] = (int)$ent['id'];
+    $entities_name_to_id[$ent['completename']] = (int) $ent['id'];
 }
 
 // Tipos de item permitidos e seus rótulos
@@ -367,7 +367,9 @@ foreach ($allowed_itemtypes as $type) {
 $existing_maintenances = $pm->find([]);
 $blocked_items = [];
 foreach ($existing_maintenances as $maintenance) {
-    if ($is_edit && $maintenance['id'] == $item_data['id']) continue;
+    if ($is_edit && $maintenance['id'] == $item_data['id']) {
+        continue;
+    }
     $blocked_items[] = $maintenance['itemtype'] . '|' . $maintenance['items_id'];
 }
 
@@ -379,7 +381,7 @@ Html::header(
     __('Manutenção Preventiva', 'preventivemaintenance'),
     $_SERVER['PHP_SELF'],
     'plugins',
-    'preventivemaintenance'
+    'preventivemaintenance',
 );
 ?>
 
@@ -604,13 +606,13 @@ Html::header(
                         <label for='entities_id_search'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
                         <input type='text' id='entities_id_search' class='form-control' list='entities_datalist'
                                autocomplete='off' placeholder='<?php echo __('Digite para buscar uma entidade'); ?>'
-                               value="<?php echo $is_edit ? htmlspecialchars(array_search((int)$item_data['entities_id'], $entities_name_to_id, true) ?: '') : ''; ?>">
+                               value="<?php echo $is_edit ? htmlspecialchars(array_search((int) $item_data['entities_id'], $entities_name_to_id, true) ?: '') : ''; ?>">
                         <datalist id='entities_datalist'>
                             <?php foreach ($entities as $ent) {
                                 echo "<option value='" . htmlspecialchars($ent['completename']) . "'></option>";
                             } ?>
                         </datalist>
-                        <input type='hidden' id='entities_id_select' value="<?php echo $is_edit ? (int)$item_data['entities_id'] : ''; ?>">
+                        <input type='hidden' id='entities_id_select' value="<?php echo $is_edit ? (int) $item_data['entities_id'] : ''; ?>">
                         <small class="text-muted d-block mt-1" id="entities_id_search_feedback"></small>
                     </div>
                     
@@ -647,7 +649,7 @@ Html::header(
                                 $selected = ($is_edit && $item_data['technician_id'] == $id) ? 'selected' : '';
                                 echo "<option value='{$id}' {$selected}>{$name}</option>";
                             }
-                            ?>
+?>
                         </select>
                     </div>
 
@@ -656,11 +658,11 @@ Html::header(
                         <select name='groups_id' id='groups_id' class='form-select' required>
                             <option value=''><?php echo __('Selecione um grupo responsável'); ?></option>
                             <?php
-                            foreach ($all_groups as $grp) {
-                                $selected = ($is_edit && ($item_data['groups_id'] ?? 0) == $grp['id']) ? 'selected' : '';
-                                echo "<option value='{$grp['id']}' {$selected}>{$grp['name']}</option>";
-                            }
-                            ?>
+foreach ($all_groups as $grp) {
+    $selected = ($is_edit && ($item_data['groups_id'] ?? 0) == $grp['id']) ? 'selected' : '';
+    echo "<option value='{$grp['id']}' {$selected}>{$grp['name']}</option>";
+}
+?>
                         </select>
                         <small class="text-muted d-block mt-1">
                             <?php echo __('O técnico é opcional (pode mudar com o tempo); o grupo é obrigatório e permanece a referência estável de responsabilidade.'); ?>
@@ -688,7 +690,7 @@ Html::header(
                                 $edit_item->getFromDB($item_data['items_id']);
                                 echo "<option value='{$item_data['items_id']}' selected>{$edit_item->getName()}</option>";
                             }
-                            ?>
+?>
                         </select>
                     </div>
                     
@@ -718,19 +720,19 @@ Html::header(
                         <div id='recurrence_months_wrapper' class='mt-2' style="<?php echo ($is_edit && !empty($item_data['is_recurring'])) ? '' : 'display:none;'; ?>">
                             <label for='recurrence_months'><?php echo __('A cada'); ?></label>
                             <?php
-                            $recurrence_options = PluginPreventivemaintenancePreventivemaintenance::getRecurrenceMonthOptions();
-                            $selected_recurrence = $is_edit ? (int)($item_data['recurrence_months'] ?? 3) : 3;
-                            $is_custom_recurrence = $is_edit && !array_key_exists($selected_recurrence, $recurrence_options);
-                            ?>
+$recurrence_options = PluginPreventivemaintenancePreventivemaintenance::getRecurrenceMonthOptions();
+$selected_recurrence = $is_edit ? (int) ($item_data['recurrence_months'] ?? 3) : 3;
+$is_custom_recurrence = $is_edit && !array_key_exists($selected_recurrence, $recurrence_options);
+?>
                             <select name='recurrence_months' id='recurrence_months' class='form-select'>
                                 <?php
-                                foreach ($recurrence_options as $months => $label) {
-                                    $selected = (!$is_custom_recurrence && $months == $selected_recurrence) ? 'selected' : '';
-                                    echo "<option value='{$months}' {$selected}>{$label}</option>";
-                                }
-                                $selected = $is_custom_recurrence ? 'selected' : '';
-                                echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
-                                ?>
+    foreach ($recurrence_options as $months => $label) {
+        $selected = (!$is_custom_recurrence && $months == $selected_recurrence) ? 'selected' : '';
+        echo "<option value='{$months}' {$selected}>{$label}</option>";
+    }
+$selected = $is_custom_recurrence ? 'selected' : '';
+echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
+?>
                             </select>
                             <div id='recurrence_months_custom_wrapper' class='mt-2' style="<?php echo $is_custom_recurrence ? '' : 'display:none;'; ?>">
                                 <label for='recurrence_months_custom'><?php echo __('Quantidade de meses'); ?></label>
@@ -750,7 +752,7 @@ Html::header(
                                 $selected = ($is_edit && ($item_data['tickettemplates_id'] ?? 0) == $tt['id']) ? 'selected' : '';
                                 echo "<option value='{$tt['id']}' {$selected}>{$tt['name']}</option>";
                             }
-                            ?>
+?>
                         </select>
                     </div>
 
@@ -809,7 +811,7 @@ Html::header(
             const itemsData = <?php echo json_encode(array_values($all_items)); ?>;
             const blockedItems = <?php echo json_encode($blocked_items); ?>;
             const currentEditItemtype = <?php echo json_encode($is_edit ? $item_data['itemtype'] : null); ?>;
-            const currentEditItemsId = <?php echo json_encode($is_edit ? (int)$item_data['items_id'] : null); ?>;
+            const currentEditItemsId = <?php echo json_encode($is_edit ? (int) $item_data['items_id'] : null); ?>;
             const entitiesNameToId = <?php echo json_encode($entities_name_to_id, JSON_UNESCAPED_UNICODE); ?>;
             
             $(document).ready(function() {
@@ -1124,7 +1126,7 @@ Html::header(
                         <tbody>
                             <?php foreach ($ticket_history as $row): ?>
                                 <?php
-                                $is_closed = in_array((int)$row['status'], [Ticket::CLOSED, Ticket::SOLVED], true);
+    $is_closed = in_array((int) $row['status'], [Ticket::CLOSED, Ticket::SOLVED], true);
                                 $status_class = $is_closed ? 'bg-success' : 'bg-warning';
                                 ?>
                                 <tr>
@@ -1134,7 +1136,7 @@ Html::header(
                                         </a>
                                     </td>
                                     <td style="text-align: center">
-                                        <span class="badge <?php echo $status_class; ?>"><?php echo Ticket::getStatus((int)$row['status']); ?></span>
+                                        <span class="badge <?php echo $status_class; ?>"><?php echo Ticket::getStatus((int) $row['status']); ?></span>
                                     </td>
                                     <td style="text-align: center"><?php echo Html::convDateTime($row['date_creation']); ?></td>
                                     <td style="text-align: center"><?php echo !empty($row['resolved_at']) ? Html::convDateTime($row['resolved_at']) : '-'; ?></td>
