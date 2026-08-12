@@ -6,6 +6,12 @@
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     [
+      "@semantic-release/npm",
+      {
+        "npmPublish": false
+      }
+    ],
+    [
       "@semantic-release/exec",
       {
         "prepareCmd": "tools/bump-version.sh ${nextRelease.version}"
@@ -42,7 +48,11 @@
             "path": "dist/glpi-preventivemaintenance-*.tar.bz2",
             "label": "Plugin Manutenção Preventiva ${nextRelease.version} — pacote instalável no GLPI"
           }
-        ]
+        ],
+        "successComment": false,
+        "failComment": false,
+        "failTitle": false,
+        "labels": false
       }
     ]
   ]

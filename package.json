@@ -1,0 +1,6 @@
+{
+  "name": "glpi-preventivemaintenance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plugin de Manutenção Preventiva para GLPI (não publicado no npm; usado apenas pelo semantic-release para versionamento)."
+}
