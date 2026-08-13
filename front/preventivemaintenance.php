@@ -576,7 +576,10 @@ function createMaintenanceTicket($maintenance_id, $items_id, $itemtype, $mainten
     }
 
     try {
+        error_log('[CREATE-TICKET] Tentando criar ticket: ' . json_encode($input));
         $ticket_id = $ticket->add($input);
+        error_log('[CREATE-TICKET] Resultado: ' . ($ticket_id ? 'ID=' . $ticket_id : 'FALHA'));
+
         if ($ticket_id) {
             $item_ticket = new Item_Ticket();
             $item_ticket->add([
@@ -588,9 +591,10 @@ function createMaintenanceTicket($maintenance_id, $items_id, $itemtype, $mainten
             registerMaintenanceTicket($ticket_id, $maintenance_id, $items_id, $itemtype, $maintenance_name);
             return $ticket_id;
         }
+        error_log('[CREATE-TICKET] Falha: Ticket::add() retornou ' . var_export($ticket_id, true));
         return false;
     } catch (Exception $e) {
-        error_log("Erro ao criar o ticket: " . $e->getMessage());
+        error_log('[CREATE-TICKET] Exceção: ' . $e->getMessage());
         return false;
     }
 }
