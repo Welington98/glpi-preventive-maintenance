@@ -426,9 +426,7 @@ Html::header(
     /* Style for entity dropdown */
     #entities_id_select {
         width: 100% !important;
-        height: auto !important;
         padding: 8px 12px !important;
-        min-height: 200px !important;
         font-size: 14px !important;
     }
     .required {
@@ -556,7 +554,7 @@ Html::header(
                 <div id='step1'>
                     <div class='form-section'>
                         <label for='entities_id_select'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
-                        <select id='entities_id_select' name='entities_id' class='form-select' style='width: 100%; min-height: 250px;'>
+                        <select id='entities_id_select' name='entities_id' class='form-select'>
                             <option value=''><?php echo __('Selecione uma entidade'); ?></option>
                             <?php
                             foreach ($entities as $ent) {
