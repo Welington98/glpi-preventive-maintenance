@@ -223,8 +223,16 @@ if (isset($_POST['generate_ticket'])) {
         Html::redirect('preventivemaintenance.php');
     }
 
-    // Chama a função para criar o chamado manualmente
-    if (createMaintenanceTicket($pm)) {
+    // Chama a função para criar o chamado manualmente com os dados da manutenção
+    if (createMaintenanceTicket(
+        $pm->fields['id'],
+        $pm->fields['items_id'],
+        $pm->fields['itemtype'],
+        $pm->fields['name'],
+        $pm->fields['technician_id'],
+        $pm->fields['tickettemplates_id'],
+        $pm->fields['groups_id']
+    )) {
         Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, SUCCESS);
     } else {
         Session::addMessageAfterRedirect(__('Falha ao gerar chamado. Verifique os logs para mais detalhes.'), false, ERROR);
@@ -866,8 +874,52 @@ Html::header(
     }
     .action-buttons {
         display: flex;
-        gap: 5px;
+        gap: 8px;
         justify-content: center;
+        flex-wrap: wrap;
+    }
+    .action-buttons .btn {
+        padding: 6px 12px !important;
+        font-size: 13px !important;
+        border-radius: 4px !important;
+        transition: all 0.2s ease !important;
+    }
+    .action-buttons .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .action-buttons .btn-outline-secondary {
+        border: 1px solid #6c757d !important;
+        color: #6c757d !important;
+    }
+    .action-buttons .btn-outline-secondary:hover {
+        background-color: #6c757d !important;
+        color: white !important;
+    }
+    .action-buttons .btn-success {
+        background-color: #28a745 !important;
+        border-color: #28a745 !important;
+        color: white !important;
+    }
+    .action-buttons .btn-success:hover {
+        background-color: #218838 !important;
+        border-color: #1e7e34 !important;
+    }
+    .action-buttons .btn-primary {
+        background-color: #007bff !important;
+        border-color: #007bff !important;
+    }
+    .action-buttons .btn-primary:hover {
+        background-color: #0056b3 !important;
+        border-color: #004085 !important;
+    }
+    .action-buttons .btn-danger {
+        background-color: #dc3545 !important;
+        border-color: #dc3545 !important;
+    }
+    .action-buttons .btn-danger:hover {
+        background-color: #c82333 !important;
+        border-color: #bd2130 !important;
     }
     .advanced-filters {
         background-color: #f8f9fa;
