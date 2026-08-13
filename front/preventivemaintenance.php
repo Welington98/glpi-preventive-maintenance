@@ -224,18 +224,30 @@ if (isset($_POST['generate_ticket'])) {
     }
 
     // Chama a função para criar o chamado manualmente com os dados da manutenção
-    if (createMaintenanceTicket(
-        $pm->fields['id'],
-        $pm->fields['items_id'],
-        $pm->fields['itemtype'],
-        $pm->fields['name'],
-        $pm->fields['technician_id'],
-        $pm->fields['tickettemplates_id'],
-        $pm->fields['groups_id']
-    )) {
-        Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, INFO);
-    } else {
-        Session::addMessageAfterRedirect(__('Falha ao gerar chamado. Verifique os logs para mais detalhes.'), false, ERROR);
+    error_log('[TICKET-DEBUG] Tentando gerar chamado para manutenção ' . $maintenance_id);
+    error_log('[TICKET-DEBUG] items_id=' . $pm->fields['items_id'] . ', itemtype=' . $pm->fields['itemtype']);
+    error_log('[TICKET-DEBUG] technician_id=' . $pm->fields['technician_id'] . ', groups_id=' . $pm->fields['groups_id']);
+
+    try {
+        $result = createMaintenanceTicket(
+            $pm->fields['id'],
+            $pm->fields['items_id'],
+            $pm->fields['itemtype'],
+            $pm->fields['name'],
+            $pm->fields['technician_id'],
+            $pm->fields['tickettemplates_id'],
+            $pm->fields['groups_id']
+        );
+        error_log('[TICKET-DEBUG] Resultado: ' . ($result ? 'SUCESSO' : 'FALHA'));
+
+        if ($result) {
+            Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, INFO);
+        } else {
+            Session::addMessageAfterRedirect(__('Falha ao gerar chamado. Verifique os logs para mais detalhes.'), false, ERROR);
+        }
+    } catch (Exception $e) {
+        error_log('[TICKET-ERROR] Exceção: ' . $e->getMessage());
+        Session::addMessageAfterRedirect(__('Erro ao gerar chamado: ') . $e->getMessage(), false, ERROR);
     }
     Html::redirect('preventivemaintenance.php');
 }
@@ -518,6 +530,7 @@ function createMaintenanceTicket($maintenance_id, $items_id, $itemtype, $mainten
         'users_id_recipient' => Session::getLoginUserID(),
         'entities_id' => $_SESSION['glpiactive_entity'],
         'date' => date('Y-m-d H:i:s'),
+        '_actors' => [],
     ];
 
     // Aplica os campos pré-definidos do modelo de chamado escolhido (categoria,
