@@ -368,19 +368,6 @@ foreach ($allowed_itemtypes as $type) {
     }
 }
 
-// Itens já vinculados a outra manutenção (chave itemtype|items_id, para não
-// confundir, por exemplo, um Computer #5 com um Monitor #5)
-// Items already linked to another maintenance record (itemtype|items_id key,
-// so e.g. Computer #5 is not confused with Monitor #5)
-$existing_maintenances = $pm->find([]);
-$blocked_items = [];
-foreach ($existing_maintenances as $maintenance) {
-    if ($is_edit && $maintenance['id'] == $item_data['id']) {
-        continue;
-    }
-    $blocked_items[] = $maintenance['itemtype'] . '|' . $maintenance['items_id'];
-}
-
 $token = Session::getNewCSRFToken();
 
 // Exibe o cabeçalho do GLPI
@@ -733,10 +720,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
             <!-- JavaScript script for form functionalities -->
             <script>
             const itemsData = <?php echo json_encode(array_values($all_items)); ?>;
-            const blockedItems = <?php echo json_encode($blocked_items); ?>;
-            const currentEditItemtype = <?php echo json_encode($is_edit ? $item_data['itemtype'] : null); ?>;
-            const currentEditItemsId = <?php echo json_encode($is_edit ? (int) $item_data['items_id'] : null); ?>;
-            
+
             $(document).ready(function() {
 
                 // Inicializa Select2 em todos os dropdowns com busca integrada
@@ -974,12 +958,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     select.find('option').not(':first').remove();
 
                     const filteredItems = itemsData.filter(item => {
-                        if (item.itemtype !== itemtype || item.entities_id != entityId) {
-                            return false;
-                        }
-                        const key = item.itemtype + '|' + item.id;
-                        const isCurrentEditItem = (currentEditItemtype === item.itemtype && currentEditItemsId === item.id);
-                        return !blockedItems.includes(key) || isCurrentEditItem;
+                        return item.itemtype === itemtype && item.entities_id == entityId;
                     });
 
                     if (filteredItems.length > 0) {
