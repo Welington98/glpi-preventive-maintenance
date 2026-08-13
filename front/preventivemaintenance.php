@@ -205,6 +205,33 @@ if (isset($_POST['save_technician_profiles'])) {
     Html::redirect('preventivemaintenance.php');
 }
 
+// Gera um chamado manualmente para uma manutenção
+// Generate a ticket manually for a maintenance
+if (isset($_POST['generate_ticket'])) {
+    if (!isset($_POST['_glpi_csrf_token'])) {
+        Session::addMessageAfterRedirect(__('Token de segurança ausente.'), false, ERROR);
+        Html::redirect('preventivemaintenance.php');
+    }
+    if (!Session::haveRight('plugin_preventivemaintenance', CREATE)) {
+        Session::addMessageAfterRedirect(__('Você não tem permissão para criar chamados.'), false, ERROR);
+        Html::redirect('preventivemaintenance.php');
+    }
+
+    $maintenance_id = (int) $_POST['generate_ticket'];
+    if (!$pm->getFromDB($maintenance_id)) {
+        Session::addMessageAfterRedirect(__('Manutenção não encontrada.'), false, ERROR);
+        Html::redirect('preventivemaintenance.php');
+    }
+
+    // Chama a função para criar o chamado manualmente
+    if (createMaintenanceTicket($pm)) {
+        Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, SUCCESS);
+    } else {
+        Session::addMessageAfterRedirect(__('Falha ao gerar chamado. Verifique os logs para mais detalhes.'), false, ERROR);
+    }
+    Html::redirect('preventivemaintenance.php');
+}
+
 // Função para verificar tickets abertos. Usa maintenance_id (vínculo direto e
 // confiável) em vez de casar por nome do chamado — a linha de rastreamento
 // agora fica gravada para sempre (vira histórico), então "aberto" é decidido
@@ -1350,13 +1377,24 @@ echo Entity::dropdown($entity_options);
                                             <a href="preventivemaintenance.form.php?id=<?= $item['id'] ?>#history" class="btn btn-sm btn-outline-secondary" title="<?= __('Ver histórico de chamados') ?>">
                                                 <i class="fas fa-search"></i>
                                             </a>
+                                            <?php if (Session::haveRight('plugin_preventivemaintenance', CREATE)): ?>
+                                                <form method="post" style="display:inline;">
+                                                    <?php echo Html::hidden('_glpi_csrf_token', ['value' => Session::getNewCSRFToken()]); ?>
+                                                    <button type="submit" name="generate_ticket" value="<?= $item['id'] ?>"
+                                                            class="btn btn-sm btn-success"
+                                                            title="<?= __('Gerar chamado manualmente') ?>"
+                                                            onclick="return confirm('<?= __('Gerar um novo chamado para esta manutenção agora?') ?>');">
+                                                        <i class="fas fa-plus"></i>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
                                             <?php if (Session::haveRight('plugin_preventivemaintenance', UPDATE)): ?>
                                                 <a href="preventivemaintenance.form.php?id=<?= $item['id'] ?>" class="btn btn-sm btn-primary" title="<?= __('Edit') ?>">
                                                     <i class="fas fa-edit"></i>
                                                 </a>
                                             <?php endif; ?>
                                             <?php if ($pm->canDelete()): ?>
-                                                <a href="preventivemaintenance.php?delete=<?= $item['id'] ?>" 
+                                                <a href="preventivemaintenance.php?delete=<?= $item['id'] ?>"
                                                    class="btn btn-sm btn-danger"
                                                    title="<?= __('Delete') ?>"
                                                    onclick="return confirm('<?= __('Do you really want to delete this record?') ?>');">
