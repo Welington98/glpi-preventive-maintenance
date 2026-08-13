@@ -233,7 +233,7 @@ if (isset($_POST['generate_ticket'])) {
         $pm->fields['tickettemplates_id'],
         $pm->fields['groups_id']
     )) {
-        Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, SUCCESS);
+        Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, INFO);
     } else {
         Session::addMessageAfterRedirect(__('Falha ao gerar chamado. Verifique os logs para mais detalhes.'), false, ERROR);
     }
