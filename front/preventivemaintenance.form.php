@@ -393,6 +393,10 @@ Html::header(
 );
 ?>
 
+<!-- Select2 para busca em dropdowns -->
+<!-- Select2 for dropdown search -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+
 <!-- Estilos CSS para a interface -->
 <!-- CSS styles for interface -->
 <style>
@@ -554,15 +558,12 @@ Html::header(
                 <div id='step1'>
                     <div class='form-section'>
                         <label for='entities_id_select'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
-                        <input type='text' id='entities_search' class='form-control mb-2'
-                               placeholder='<?php echo __('Buscar entidade...'); ?>'
-                               autocomplete='off'>
-                        <select id='entities_id_select' name='entities_id' class='form-select'>
+                        <select id='entities_id_select' name='entities_id' class='form-select' style='width: 100%;'>
                             <option value=''><?php echo __('Selecione uma entidade'); ?></option>
                             <?php
                             foreach ($entities as $ent) {
                                 $selected = ($is_edit && $ent['id'] == $item_data['entities_id']) ? 'selected' : '';
-                                echo "<option value='{$ent['id']}' data-entity-name='{$ent['completename']}' {$selected}>{$ent['completename']}</option>";
+                                echo "<option value='{$ent['id']}' {$selected}>{$ent['completename']}</option>";
                             }
                             ?>
                         </select>
@@ -738,29 +739,13 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
             
             $(document).ready(function() {
 
-                // Filtro de busca de entidades
-                // Entity search filter
-                $('#entities_search').on('keyup', function() {
-                    const searchText = $(this).val().toLowerCase();
-                    const allOptions = $('#entities_id_select option');
-
-                    if (searchText === '') {
-                        allOptions.show();
-                        return;
-                    }
-
-                    allOptions.each(function() {
-                        if ($(this).val() === '') {
-                            $(this).show();
-                            return;
-                        }
-                        const entityName = $(this).data('entity-name').toLowerCase();
-                        if (entityName.includes(searchText)) {
-                            $(this).show();
-                        } else {
-                            $(this).hide();
-                        }
-                    });
+                // Inicializa Select2 no dropdown de entidades com busca integrada
+                // Initialize Select2 on entity dropdown with integrated search
+                $('#entities_id_select').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar entidade...'); ?>',
+                    allowClear: true,
+                    minimumResultsForSearch: 0
                 });
 
                 // Configuração de localização para português
@@ -974,6 +959,10 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                 }
             });
             </script>
+
+            <!-- Select2 script para busca em dropdown -->
+            <!-- Select2 script for dropdown search -->
+            <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         </div>
     </div>
 
