@@ -337,15 +337,6 @@ $entity = new Entity();
 // Finds only active entities from user session
 $entities = $entity->find(['id' => $_SESSION['glpiactiveentities']], 'completename ASC');
 
-// Mapa nome completo -> id, usado pelo campo de busca de entidade (evita um
-// <select> gigante quando há muitas entidades).
-// Full name -> id map, used by the entity search field (avoids a giant
-// <select> when there are many entities).
-$entities_name_to_id = [];
-foreach ($entities as $ent) {
-    $entities_name_to_id[$ent['completename']] = (int) $ent['id'];
-}
-
 // Tipos de item permitidos e seus rótulos
 // Allowed item types and their labels
 $allowed_itemtypes = PluginPreventivemaintenancePreventivemaintenance::getAllowedItemtypes();
@@ -430,6 +421,15 @@ Html::header(
     /* Specific style for technician dropdown */
     select[name='technician_id'] {
         width: 100% !important;
+    }
+    /* Estilo para o select de entidades */
+    /* Style for entity dropdown */
+    #entities_id_select {
+        width: 100% !important;
+        height: auto !important;
+        padding: 8px 12px !important;
+        min-height: 200px !important;
+        font-size: 14px !important;
     }
     .required {
         color: #dc3545;
@@ -555,17 +555,16 @@ Html::header(
                 <!-- STEP 1 - Only entity selection -->
                 <div id='step1'>
                     <div class='form-section'>
-                        <label for='entities_id_search'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
-                        <input type='text' id='entities_id_search' class='form-control' list='entities_datalist'
-                               autocomplete='off' placeholder='<?php echo __('Digite para buscar uma entidade'); ?>'
-                               value="<?php echo $is_edit ? htmlspecialchars(array_search((int) $item_data['entities_id'], $entities_name_to_id, true) ?: '') : ''; ?>">
-                        <datalist id='entities_datalist'>
-                            <?php foreach ($entities as $ent) {
-                                echo "<option value='" . htmlspecialchars($ent['completename']) . "'></option>";
-                            } ?>
-                        </datalist>
-                        <input type='hidden' id='entities_id_select' value="<?php echo $is_edit ? (int) $item_data['entities_id'] : ''; ?>">
-                        <small class="text-muted d-block mt-1" id="entities_id_search_feedback"></small>
+                        <label for='entities_id_select'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
+                        <select id='entities_id_select' name='entities_id' class='form-select' style='width: 100%; min-height: 250px;'>
+                            <option value=''><?php echo __('Selecione uma entidade'); ?></option>
+                            <?php
+                            foreach ($entities as $ent) {
+                                $selected = ($is_edit && $ent['id'] == $item_data['entities_id']) ? 'selected' : '';
+                                echo "<option value='{$ent['id']}' {$selected}>{$ent['completename']}</option>";
+                            }
+                            ?>
+                        </select>
                     </div>
                     
                     <div class='d-flex justify-content-end mt-4'>
@@ -735,26 +734,8 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
             const blockedItems = <?php echo json_encode($blocked_items); ?>;
             const currentEditItemtype = <?php echo json_encode($is_edit ? $item_data['itemtype'] : null); ?>;
             const currentEditItemsId = <?php echo json_encode($is_edit ? (int) $item_data['items_id'] : null); ?>;
-            const entitiesNameToId = <?php echo json_encode($entities_name_to_id, JSON_UNESCAPED_UNICODE); ?>;
             
             $(document).ready(function() {
-                // Campo de busca de entidade: resolve o texto digitado (que precisa
-                // bater exatamente com uma opção da lista de sugestões nativa do
-                // navegador) para o ID correspondente, guardado no campo oculto.
-                // Entity search field: resolves the typed text (which must match
-                // exactly one of the browser's native suggestion list options) to
-                // the corresponding ID, stored in the hidden field.
-                $('#entities_id_search').on('input change', function() {
-                    const typed = $(this).val();
-                    const feedback = $('#entities_id_search_feedback');
-                    if (entitiesNameToId.hasOwnProperty(typed)) {
-                        $('#entities_id_select').val(entitiesNameToId[typed]);
-                        feedback.text('');
-                    } else {
-                        $('#entities_id_select').val('');
-                        feedback.text(typed ? '<?php echo __('Selecione uma entidade da lista de sugestões.'); ?>' : '');
-                    }
-                });
 
                 // Configuração de localização para português
                 // Portuguese localization setup
@@ -882,7 +863,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     // Se estiver editando, configura os valores iniciais
                     // If editing, sets initial values
                     const entityId = <?php echo $item_data['entities_id']; ?>;
-                    const entityName = $('#entities_id_search').val();
+                    const entityName = $('#entities_id_select option:selected').text();
 
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
@@ -897,11 +878,11 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                 $('#nextButton').click(function() {
                     const entityId = $('#entities_id_select').val();
                     if (!entityId) {
-                        alert('<?php echo __("Selecione uma entidade válida da lista de sugestões"); ?>');
+                        alert('<?php echo __("Selecione uma entidade válida"); ?>');
                         return;
                     }
 
-                    const entityName = $('#entities_id_search').val();
+                    const entityName = $('#entities_id_select option:selected').text();
 
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
