@@ -739,12 +739,26 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
             
             $(document).ready(function() {
 
-                // Inicializa Select2 no dropdown de entidades com busca integrada
-                // Initialize Select2 on entity dropdown with integrated search
+                // Inicializa Select2 em todos os dropdowns com busca integrada
+                // Initialize Select2 on all dropdowns with integrated search
                 $('#entities_id_select').select2({
                     language: 'pt-BR',
                     placeholder: '<?php echo __('Buscar ou selecionar entidade...'); ?>',
                     allowClear: true,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#technician_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar técnico...'); ?>',
+                    allowClear: true,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#groups_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar grupo...'); ?>',
+                    allowClear: false,
                     minimumResultsForSearch: 0
                 });
 
