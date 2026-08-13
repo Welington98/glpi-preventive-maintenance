@@ -554,12 +554,15 @@ Html::header(
                 <div id='step1'>
                     <div class='form-section'>
                         <label for='entities_id_select'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
+                        <input type='text' id='entities_search' class='form-control mb-2'
+                               placeholder='<?php echo __('Buscar entidade...'); ?>'
+                               autocomplete='off'>
                         <select id='entities_id_select' name='entities_id' class='form-select'>
                             <option value=''><?php echo __('Selecione uma entidade'); ?></option>
                             <?php
                             foreach ($entities as $ent) {
                                 $selected = ($is_edit && $ent['id'] == $item_data['entities_id']) ? 'selected' : '';
-                                echo "<option value='{$ent['id']}' {$selected}>{$ent['completename']}</option>";
+                                echo "<option value='{$ent['id']}' data-entity-name='{$ent['completename']}' {$selected}>{$ent['completename']}</option>";
                             }
                             ?>
                         </select>
@@ -734,6 +737,31 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
             const currentEditItemsId = <?php echo json_encode($is_edit ? (int) $item_data['items_id'] : null); ?>;
             
             $(document).ready(function() {
+
+                // Filtro de busca de entidades
+                // Entity search filter
+                $('#entities_search').on('keyup', function() {
+                    const searchText = $(this).val().toLowerCase();
+                    const allOptions = $('#entities_id_select option');
+
+                    if (searchText === '') {
+                        allOptions.show();
+                        return;
+                    }
+
+                    allOptions.each(function() {
+                        if ($(this).val() === '') {
+                            $(this).show();
+                            return;
+                        }
+                        const entityName = $(this).data('entity-name').toLowerCase();
+                        if (entityName.includes(searchText)) {
+                            $(this).show();
+                        } else {
+                            $(this).hide();
+                        }
+                    });
+                });
 
                 // Configuração de localização para português
                 // Portuguese localization setup
