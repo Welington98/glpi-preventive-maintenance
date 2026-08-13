@@ -224,10 +224,6 @@ if (isset($_POST['generate_ticket'])) {
     }
 
     // Chama a função para criar o chamado manualmente com os dados da manutenção
-    error_log('[TICKET-DEBUG] Tentando gerar chamado para manutenção ' . $maintenance_id);
-    error_log('[TICKET-DEBUG] items_id=' . $pm->fields['items_id'] . ', itemtype=' . $pm->fields['itemtype']);
-    error_log('[TICKET-DEBUG] technician_id=' . $pm->fields['technician_id'] . ', groups_id=' . $pm->fields['groups_id']);
-
     try {
         $result = createMaintenanceTicket(
             $pm->fields['id'],
@@ -238,7 +234,6 @@ if (isset($_POST['generate_ticket'])) {
             $pm->fields['tickettemplates_id'],
             $pm->fields['groups_id']
         );
-        error_log('[TICKET-DEBUG] Resultado: ' . ($result ? 'SUCESSO' : 'FALHA'));
 
         if ($result) {
             Session::addMessageAfterRedirect(__('Chamado gerado com sucesso!'), true, INFO);
