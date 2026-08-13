@@ -762,6 +762,20 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     minimumResultsForSearch: 0
                 });
 
+                $('#itemtype').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar tipo de item...'); ?>',
+                    allowClear: false,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#items_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar item...'); ?>',
+                    allowClear: false,
+                    minimumResultsForSearch: 0
+                });
+
                 // Configuração de localização para português
                 // Portuguese localization setup
                 $.datepicker.regional['pt-BR'] = {
