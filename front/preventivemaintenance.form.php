@@ -776,6 +776,13 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     minimumResultsForSearch: 0
                 });
 
+                $('#tickettemplates_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar modelo de chamado...'); ?>',
+                    allowClear: true,
+                    minimumResultsForSearch: 0
+                });
+
                 // Configuração de localização para português
                 // Portuguese localization setup
                 $.datepicker.regional['pt-BR'] = {
