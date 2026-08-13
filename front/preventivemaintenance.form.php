@@ -112,11 +112,17 @@ if ($is_edit) {
 // Busca todos os perfis disponíveis para seleção
 // Finds all available profiles for selection
 $profile = new Profile();
-$all_profiles = $profile->find([], 'name ASC');
 
-// Busca os perfis técnicos selecionados (armazenados na sessão ou usa o padrão 'Technician')
-// Finds selected technician profiles (stored in session or uses default 'Technician')
-$selected_profiles = $_SESSION['plugin_preventivemaintenance_selected_profiles'] ?? ['Technician'];
+// Busca os perfis considerados "técnico", configurados uma única vez em
+// Configurações (botão de engrenagem no dashboard) — não é mais necessário
+// selecioná-los a cada manutenção criada.
+// Finds the profiles considered "technician", configured once in Settings
+// (gear button on the dashboard) — no longer necessary to re-select them
+// every time a maintenance is created.
+$selected_profiles = json_decode((string) PluginPreventivemaintenancePreventivemaintenance::getConfig('technician_profiles'), true);
+if (!is_array($selected_profiles) || empty($selected_profiles)) {
+    $selected_profiles = ['Technician'];
+}
 
 // Busca os técnicos responsáveis (usuários com perfil de técnico selecionado)
 // Finds responsible technicians (users with selected technician profile)
@@ -149,8 +155,26 @@ foreach ($selected_profiles as $profile_name) {
 // because this wizard loads jQuery/jQuery UI from a separate CDN (needed for
 // the custom datepicker below), which breaks GLPI's select2 used by those
 // dropdowns on this specific page.
+// Só grupos com a flag "Atribuído a" (is_assign) habilitada no GLPI aparecem
+// aqui, já que é como esse grupo é vinculado ao chamado auto-criado — um
+// grupo sem essa flag não pode ser atribuído a um chamado de qualquer jeito.
+// Only groups with GLPI's "Assigned to" flag (is_assign) enabled show up
+// here, since that's how this group gets linked to the auto-created ticket —
+// a group without that flag cannot be assigned to a ticket anyway.
 $group = new Group();
-$all_groups = $group->find([], 'name ASC');
+$all_groups = $group->find(['is_assign' => 1], 'name ASC');
+
+// Em modo de edição, garante que o grupo já salvo continue aparecendo mesmo
+// que a flag is_assign tenha sido desmarcada depois, para não perder a
+// seleção existente ao salvar de novo.
+// In edit mode, ensures the already-saved group keeps showing up even if
+// its is_assign flag was unchecked afterwards, so saving again doesn't
+// silently drop the existing selection.
+if ($is_edit && !empty($item_data['groups_id']) && !isset($all_groups[$item_data['groups_id']])) {
+    if ($group->getFromDB($item_data['groups_id'])) {
+        $all_groups[$item_data['groups_id']] = $group->fields;
+    }
+}
 
 $ticket_template = new TicketTemplate();
 $all_ticket_templates = $ticket_template->find([], 'name ASC');
@@ -304,13 +328,6 @@ if (isset($_POST['add'])) {
         Session::addMessageAfterRedirect($e->getMessage(), false, ERROR);
         Html::back();
     }
-}
-
-// Processa a seleção de perfis técnicos se enviado
-// Processes technician profiles selection if submitted
-if (isset($_POST['save_selected_profiles'])) {
-    $_SESSION['plugin_preventivemaintenance_selected_profiles'] = $_POST['profiles'] ?? ['Technician'];
-    Html::back();
 }
 
 // Configuração do formulário
@@ -513,62 +530,6 @@ Html::header(
         background: #45a049;
     }
     
-    /* Estilos para o modal de seleção de perfis */
-    /* Styles for profile selection modal */
-    .profile-modal {
-        display: none;
-        position: fixed;
-        z-index: 1000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0,0,0,0.4);
-    }
-    .profile-modal-content {
-        background-color: #fefefe;
-        margin: 10% auto;
-        padding: 20px;
-        border: 1px solid #888;
-        width: 50%;
-        border-radius: 5px;
-        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
-    }
-    .profile-modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    .profile-modal-title {
-        font-size: 1.2em;
-        font-weight: bold;
-    }
-    .profile-modal-close {
-        color: #aaa;
-        font-size: 28px;
-        font-weight: bold;
-        cursor: pointer;
-    }
-    .profile-modal-close:hover {
-        color: black;
-    }
-    .profile-checkboxes {
-        max-height: 400px;
-        overflow-y: auto;
-        margin-bottom: 20px;
-    }
-    .profile-checkbox-item {
-        margin-bottom: 10px;
-    }
-    .profile-modal-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-    }
-    .select-profile-btn {
-        margin-bottom: 15px;
-    }
 </style>
 
 <!-- HTML principal do formulário -->
@@ -593,15 +554,6 @@ Html::header(
                 <!-- STEP 1 - Somente seleção da entidade -->
                 <!-- STEP 1 - Only entity selection -->
                 <div id='step1'>
-                    <!-- Botão para selecionar perfis técnicos -->
-                    <!-- Button to select technician profiles -->
-                    <div class="select-profile-btn">
-                        <button type="button" id="selectProfilesBtn" class="btn btn-info">
-                            <i class="fas fa-user-cog me-2"></i><?php echo __('Selecionar Perfis Técnicos'); ?>
-                        </button>
-                        <small class="text-muted d-block mt-1"><?php echo __('Perfis selecionados: ') . implode(', ', $selected_profiles); ?></small>
-                    </div>
-                    
                     <div class='form-section'>
                         <label for='entities_id_search'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
                         <input type='text' id='entities_id_search' class='form-control' list='entities_datalist'
@@ -651,6 +603,9 @@ Html::header(
                             }
 ?>
                         </select>
+                        <small class="text-muted d-block mt-1">
+                            <?php echo __('Perfis considerados técnico são configurados uma única vez em Configurações, no painel principal.'); ?>
+                        </small>
                     </div>
 
                     <div class='form-section'>
@@ -766,39 +721,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     </div>
                 </div>
             </form>
-            
-            <!-- Modal para seleção de perfis técnicos -->
-            <!-- Modal for technician profiles selection -->
-            <div id="profileModal" class="profile-modal">
-                <div class="profile-modal-content">
-                    <div class="profile-modal-header">
-                        <div class="profile-modal-title"><?php echo __('Selecionar Perfis Técnicos'); ?></div>
-                        <span class="profile-modal-close">&times;</span>
-                    </div>
-                    <form method="post" id="profileSelectionForm">
-                        <?php echo Html::hidden('_glpi_csrf_token', ['value' => $token]); ?>
-                        <input type="hidden" name="save_selected_profiles" value="1">
-                        
-                        <div class="profile-checkboxes">
-                            <?php foreach ($all_profiles as $prof): ?>
-                                <div class="profile-checkbox-item">
-                                    <label>
-                                        <input type="checkbox" name="profiles[]" value="<?php echo $prof['name']; ?>"
-                                            <?php echo in_array($prof['name'], $selected_profiles) ? 'checked' : ''; ?>>
-                                        <?php echo $prof['name']; ?>
-                                    </label>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                        
-                        <div class="profile-modal-footer">
-                            <button type="button" class="btn btn-secondary" id="cancelProfileSelection"><?php echo __('Cancelar'); ?></button>
-                            <button type="submit" class="btn btn-primary"><?php echo __('Salvar Seleção'); ?></button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            
+
             <!-- Inclusão de bibliotecas JavaScript -->
             <!-- JavaScript libraries inclusion -->
             <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -1042,61 +965,6 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                         select.append(option);
                     }
                 }
-                
-                // ==============================================
-                // CÓDIGO PARA O BOTÃO DE SELEÇÃO DE PERFIS TÉCNICOS
-                // CODE FOR TECHNICIAN PROFILES SELECTION BUTTON
-                // ==============================================
-                
-                // Abre o modal de seleção de perfis
-                // Opens profile selection modal
-                $('#selectProfilesBtn').click(function() {
-                    $('#profileModal').show();
-                });
-                
-                // Fecha o modal quando clica no X
-                // Closes modal when clicking X
-                $('.profile-modal-close').click(function() {
-                    $('#profileModal').hide();
-                });
-                
-                // Fecha o modal quando clica em Cancelar
-                // Closes modal when clicking Cancel
-                $('#cancelProfileSelection').click(function() {
-                    $('#profileModal').hide();
-                });
-                
-                // Fecha o modal quando clica fora da área de conteúdo
-                // Closes modal when clicking outside content area
-                $(window).click(function(event) {
-                    if (event.target == $('#profileModal')[0]) {
-                        $('#profileModal').hide();
-                    }
-                });
-                
-                // Processa o formulário de seleção de perfis. Envio nativo (sem
-                // AJAX) — o GLPI 11 valida o token CSRF de um jeito diferente
-                // para requisições AJAX (header em vez do campo do formulário),
-                // que o $.ajax() abaixo não enviava, sempre resultando em 403.
-                // O formulário principal já funciona via POST normal, então
-                // seguimos o mesmo caminho aqui.
-                // Processes profile selection form. Native submit (no AJAX) —
-                // GLPI 11 validates the CSRF token differently for AJAX requests
-                // (a header instead of the form field), which the $.ajax() below
-                // never sent, always resulting in a 403. The main form already
-                // works via a normal POST, so we follow the same path here.
-                $('#profileSelectionForm').submit(function(e) {
-                    // Verifica se pelo menos um perfil foi selecionado
-                    // Checks if at least one profile was selected
-                    if ($('#profileSelectionForm input[name="profiles[]"]:checked').length === 0) {
-                        e.preventDefault();
-                        alert('<?php echo __("Selecione pelo menos um perfil técnico"); ?>');
-                    }
-                    // Caso contrário, deixa o navegador enviar o formulário
-                    // normalmente (POST + reload da página).
-                    // Otherwise, let the browser submit the form normally
-                    // (POST + page reload).
-                });
             });
             </script>
         </div>

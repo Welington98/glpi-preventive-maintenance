@@ -119,6 +119,55 @@ class PluginPreventivemaintenancePreventivemaintenance extends CommonDBTM
     }
 
     /**
+     * Lê uma configuração persistente do plugin (glpi_plugin_preventivemaintenance_config).
+     * Reads a persistent plugin configuration value.
+     */
+    public static function getConfig($name, $default = false)
+    {
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT' => ['value'],
+            'FROM'   => 'glpi_plugin_preventivemaintenance_config',
+            'WHERE'  => ['name' => $name],
+            'LIMIT'  => 1,
+        ]);
+
+        if (count($iterator)) {
+            return $iterator->current()['value'];
+        }
+
+        return $default;
+    }
+
+    /**
+     * Grava uma configuração persistente do plugin (upsert).
+     * Writes a persistent plugin configuration value (upsert).
+     */
+    public static function setConfig($name, $value)
+    {
+        global $DB;
+
+        $now = date('Y-m-d H:i:s');
+
+        if (self::getConfig($name) !== false) {
+            return $DB->update('glpi_plugin_preventivemaintenance_config', [
+                'value'    => $value,
+                'date_mod' => $now,
+            ], [
+                'name' => $name,
+            ]);
+        }
+
+        return $DB->insert('glpi_plugin_preventivemaintenance_config', [
+            'name'          => $name,
+            'value'         => $value,
+            'date_creation' => $now,
+            'date_mod'      => $now,
+        ]);
+    }
+
+    /**
      * Retorna o nome do tipo do item (singular/plural)
      * Returns the type name of the item (singular/plural)
      */

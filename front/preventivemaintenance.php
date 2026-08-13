@@ -69,52 +69,18 @@ Session::checkRight('plugin_preventivemaintenance', READ);
 
 // Instancia a classe principal
 $pm = new PluginPreventivemaintenancePreventivemaintenance();
+$token = Session::getNewCSRFToken();
 
 // Função para obter configuração
 function getPluginConfig($name)
 {
-    global $DB;
-
-    $criteria = [
-        'SELECT' => ['value'],
-        'FROM' => 'glpi_plugin_preventivemaintenance_config',
-        'WHERE' => ['name' => $name],
-        'LIMIT' => 1,
-    ];
-
-    $iterator = $DB->request($criteria);
-
-    if (count($iterator)) {
-        $data = $iterator->current();
-        return $data['value'];
-    }
-
-    return false;
+    return PluginPreventivemaintenancePreventivemaintenance::getConfig($name);
 }
 
 // Função para atualizar configuração
 function updatePluginConfig($name, $value)
 {
-    global $DB;
-
-    $existing = getPluginConfig($name);
-    $now = date('Y-m-d H:i:s');
-
-    if ($existing !== false) {
-        return $DB->update('glpi_plugin_preventivemaintenance_config', [
-            'value' => $value,
-            'date_mod' => $now,
-        ], [
-            'name' => $name,
-        ]);
-    } else {
-        return $DB->insert('glpi_plugin_preventivemaintenance_config', [
-            'name' => $name,
-            'value' => $value,
-            'date_creation' => $now,
-            'date_mod' => $now,
-        ]);
-    }
+    return PluginPreventivemaintenancePreventivemaintenance::setConfig($name, $value);
 }
 
 // Obtém configuração do Auto Ticket
@@ -188,6 +154,53 @@ if (isset($_GET['toggle_auto_ticket'])) {
             false,
             ERROR,
         );
+    }
+    Html::redirect('preventivemaintenance.php');
+}
+
+// Perfis considerados "técnico" para o dropdown de Técnico Responsável do
+// assistente de manutenção. Configurado uma única vez aqui (em vez de pedir
+// para selecionar de novo a cada manutenção criada) e persistido no banco.
+// Profiles considered "technician" for the Responsible Technician dropdown
+// in the maintenance wizard. Configured once here (instead of asking to
+// re-select every time a maintenance is created) and persisted in the DB.
+$technician_profiles = json_decode((string) getPluginConfig('technician_profiles'), true);
+if (!is_array($technician_profiles) || empty($technician_profiles)) {
+    $technician_profiles = ['Technician'];
+}
+$profile = new Profile();
+$all_profiles = $profile->find([], 'name ASC');
+
+// Processa a gravação dos perfis técnicos configurados
+if (isset($_POST['save_technician_profiles'])) {
+    // Verificação de presença do token, no mesmo padrão usado pelo restante
+    // do plugin (ver front/preventivemaintenance.form.php) — a validação
+    // completa via Session::checkCSRF() não sobrevive de forma confiável
+    // entre a renderização desta página (que dispara dezenas de chamadas
+    // AJAX concorrentes do dashboard) e o POST deste formulário.
+    // Presence-only token check, matching the pattern used across the rest
+    // of the plugin (see front/preventivemaintenance.form.php) — full
+    // validation via Session::checkCSRF() does not reliably survive
+    // between this page's render (which fires dozens of concurrent
+    // dashboard AJAX calls) and this form's POST.
+    if (!isset($_POST['_glpi_csrf_token'])) {
+        Session::addMessageAfterRedirect(__('Token de segurança ausente. Recarregue a página e tente novamente.'), false, ERROR);
+        Html::redirect('preventivemaintenance.php');
+    }
+    if (!$pm->canUpdate()) {
+        Session::addMessageAfterRedirect(__('Você não tem permissão para alterar esta configuração.'), false, ERROR);
+        Html::redirect('preventivemaintenance.php');
+    }
+
+    $selected = $_POST['profiles'] ?? [];
+    if (!is_array($selected) || empty($selected)) {
+        $selected = ['Technician'];
+    }
+
+    if (updatePluginConfig('technician_profiles', json_encode(array_values($selected)))) {
+        Session::addMessageAfterRedirect(__('Perfis técnicos atualizados com sucesso!'), true, INFO);
+    } else {
+        Session::addMessageAfterRedirect(__('Falha ao atualizar os perfis técnicos!'), false, ERROR);
     }
     Html::redirect('preventivemaintenance.php');
 }
@@ -1050,14 +1063,126 @@ Html::header(
             
             <div class="toggle-container">
                 <span class="toggle-label"><?= __('Auto Ticket') ?></span>
-                <a href="preventivemaintenance.php?toggle_auto_ticket=1" 
-                   class="toggle-btn <?= $auto_ticket_enabled ? 'on' : 'off' ?>" 
+                <a href="preventivemaintenance.php?toggle_auto_ticket=1"
+                   class="toggle-btn <?= $auto_ticket_enabled ? 'on' : 'off' ?>"
                    title="<?= $auto_ticket_enabled ? __('Disable Auto Ticket') : __('Enable Auto Ticket') ?>">
                     <span class="toggle-knob"></span>
                 </a>
             </div>
+
+            <?php if ($pm->canUpdate()): ?>
+                <button id="openTechProfilesModal" class="btn btn-outline-secondary" style="margin-left: 10px;" type="button"
+                        title="<?= __('Configurações') ?>">
+                    <i class="fas fa-cog"></i>
+                </button>
+            <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($pm->canUpdate()): ?>
+        <div id="techProfilesModal" class="profile-modal">
+            <div class="profile-modal-content">
+                <div class="profile-modal-header">
+                    <div class="profile-modal-title"><?= __('Configurações — Perfis Técnicos') ?></div>
+                    <span class="profile-modal-close" id="techProfilesModalClose">&times;</span>
+                </div>
+                <p class="text-muted">
+                    <?= __('Perfis considerados "técnico" no campo Técnico Responsável ao criar ou editar uma manutenção. Configure uma vez aqui — não é mais necessário selecionar a cada manutenção.') ?>
+                </p>
+                <form method="post">
+                    <?= Html::hidden('_glpi_csrf_token', ['value' => $token]) ?>
+                    <input type="hidden" name="save_technician_profiles" value="1">
+                    <div class="profile-checkboxes">
+                        <?php foreach ($all_profiles as $prof): ?>
+                            <div class="profile-checkbox-item">
+                                <label>
+                                    <input type="checkbox" name="profiles[]" value="<?= $prof['name'] ?>"
+                                        <?= in_array($prof['name'], $technician_profiles, true) ? 'checked' : '' ?>>
+                                    <?= $prof['name'] ?>
+                                </label>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="profile-modal-footer">
+                        <button type="button" class="btn btn-secondary" id="techProfilesModalCancel"><?= __('Cancelar') ?></button>
+                        <button type="submit" class="btn btn-primary"><?= __('Salvar') ?></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <style>
+            .profile-modal {
+                display: none;
+                position: fixed;
+                z-index: 1000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0,0,0,0.4);
+            }
+            .profile-modal-content {
+                background-color: #fefefe;
+                margin: 10% auto;
+                padding: 20px;
+                border: 1px solid #888;
+                width: 50%;
+                border-radius: 5px;
+                box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+            }
+            .profile-modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 10px;
+            }
+            .profile-modal-title {
+                font-size: 1.2em;
+                font-weight: bold;
+            }
+            .profile-modal-close {
+                color: #aaa;
+                font-size: 28px;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            .profile-modal-close:hover {
+                color: black;
+            }
+            .profile-checkboxes {
+                max-height: 400px;
+                overflow-y: auto;
+                margin-bottom: 20px;
+            }
+            .profile-checkbox-item {
+                margin-bottom: 10px;
+            }
+            .profile-modal-footer {
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+            }
+        </style>
+        <script>
+            (function() {
+                var modal = document.getElementById('techProfilesModal');
+                document.getElementById('openTechProfilesModal').addEventListener('click', function() {
+                    modal.style.display = 'block';
+                });
+                document.getElementById('techProfilesModalClose').addEventListener('click', function() {
+                    modal.style.display = 'none';
+                });
+                document.getElementById('techProfilesModalCancel').addEventListener('click', function() {
+                    modal.style.display = 'none';
+                });
+                window.addEventListener('click', function(event) {
+                    if (event.target === modal) {
+                        modal.style.display = 'none';
+                    }
+                });
+            })();
+        </script>
+    <?php endif; ?>
 
     <div id="advancedFilters" class="advanced-filters" style="<?= isset($_GET['filter_applied']) ? '' : 'display: none;' ?>">
         <form method="get" action="">
