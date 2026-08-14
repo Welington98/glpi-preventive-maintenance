@@ -112,11 +112,17 @@ if ($is_edit) {
 // Busca todos os perfis disponíveis para seleção
 // Finds all available profiles for selection
 $profile = new Profile();
-$all_profiles = $profile->find([], 'name ASC');
 
-// Busca os perfis técnicos selecionados (armazenados na sessão ou usa o padrão 'Technician')
-// Finds selected technician profiles (stored in session or uses default 'Technician')
-$selected_profiles = $_SESSION['plugin_preventivemaintenance_selected_profiles'] ?? ['Technician'];
+// Busca os perfis considerados "técnico", configurados uma única vez em
+// Configurações (botão de engrenagem no dashboard) — não é mais necessário
+// selecioná-los a cada manutenção criada.
+// Finds the profiles considered "technician", configured once in Settings
+// (gear button on the dashboard) — no longer necessary to re-select them
+// every time a maintenance is created.
+$selected_profiles = json_decode((string) PluginPreventivemaintenancePreventivemaintenance::getConfig('technician_profiles'), true);
+if (!is_array($selected_profiles) || empty($selected_profiles)) {
+    $selected_profiles = ['Technician'];
+}
 
 // Busca os técnicos responsáveis (usuários com perfil de técnico selecionado)
 // Finds responsible technicians (users with selected technician profile)
@@ -149,8 +155,26 @@ foreach ($selected_profiles as $profile_name) {
 // because this wizard loads jQuery/jQuery UI from a separate CDN (needed for
 // the custom datepicker below), which breaks GLPI's select2 used by those
 // dropdowns on this specific page.
+// Só grupos com a flag "Atribuído a" (is_assign) habilitada no GLPI aparecem
+// aqui, já que é como esse grupo é vinculado ao chamado auto-criado — um
+// grupo sem essa flag não pode ser atribuído a um chamado de qualquer jeito.
+// Only groups with GLPI's "Assigned to" flag (is_assign) enabled show up
+// here, since that's how this group gets linked to the auto-created ticket —
+// a group without that flag cannot be assigned to a ticket anyway.
 $group = new Group();
-$all_groups = $group->find([], 'name ASC');
+$all_groups = $group->find(['is_assign' => 1], 'name ASC');
+
+// Em modo de edição, garante que o grupo já salvo continue aparecendo mesmo
+// que a flag is_assign tenha sido desmarcada depois, para não perder a
+// seleção existente ao salvar de novo.
+// In edit mode, ensures the already-saved group keeps showing up even if
+// its is_assign flag was unchecked afterwards, so saving again doesn't
+// silently drop the existing selection.
+if ($is_edit && !empty($item_data['groups_id']) && !isset($all_groups[$item_data['groups_id']])) {
+    if ($group->getFromDB($item_data['groups_id'])) {
+        $all_groups[$item_data['groups_id']] = $group->fields;
+    }
+}
 
 $ticket_template = new TicketTemplate();
 $all_ticket_templates = $ticket_template->find([], 'name ASC');
@@ -215,25 +239,6 @@ if (isset($_POST['add'])) {
         $group = new Group();
         if (!$group->getFromDB((int) $_POST['groups_id'])) {
             throw new Exception(__('Grupo selecionado não encontrado.'));
-        }
-
-        // Verifica se já existe manutenção para este item (mesmo tipo + mesmo id)
-        // Checks if maintenance already exists for this item (same type + same id)
-        $existing = $pm->find([
-            'items_id' => $items_id,
-            'itemtype' => $itemtype,
-        ]);
-
-        if ($is_edit) {
-            unset($existing[$id]);
-        }
-
-        if (count($existing) > 0) {
-            throw new Exception(sprintf(
-                __('Já existe uma manutenção cadastrada para o item %s (ID: %d)'),
-                $item->getName(),
-                $items_id,
-            ));
         }
 
         // Resolve o valor de recorrência: "custom" usa o campo de quantidade
@@ -306,28 +311,12 @@ if (isset($_POST['add'])) {
     }
 }
 
-// Processa a seleção de perfis técnicos se enviado
-// Processes technician profiles selection if submitted
-if (isset($_POST['save_selected_profiles'])) {
-    $_SESSION['plugin_preventivemaintenance_selected_profiles'] = $_POST['profiles'] ?? ['Technician'];
-    Html::back();
-}
-
 // Configuração do formulário
 // Form configuration
 $entity = new Entity();
 // Busca apenas as entidades ativas da sessão do usuário
 // Finds only active entities from user session
 $entities = $entity->find(['id' => $_SESSION['glpiactiveentities']], 'completename ASC');
-
-// Mapa nome completo -> id, usado pelo campo de busca de entidade (evita um
-// <select> gigante quando há muitas entidades).
-// Full name -> id map, used by the entity search field (avoids a giant
-// <select> when there are many entities).
-$entities_name_to_id = [];
-foreach ($entities as $ent) {
-    $entities_name_to_id[$ent['completename']] = (int) $ent['id'];
-}
 
 // Tipos de item permitidos e seus rótulos
 // Allowed item types and their labels
@@ -360,19 +349,6 @@ foreach ($allowed_itemtypes as $type) {
     }
 }
 
-// Itens já vinculados a outra manutenção (chave itemtype|items_id, para não
-// confundir, por exemplo, um Computer #5 com um Monitor #5)
-// Items already linked to another maintenance record (itemtype|items_id key,
-// so e.g. Computer #5 is not confused with Monitor #5)
-$existing_maintenances = $pm->find([]);
-$blocked_items = [];
-foreach ($existing_maintenances as $maintenance) {
-    if ($is_edit && $maintenance['id'] == $item_data['id']) {
-        continue;
-    }
-    $blocked_items[] = $maintenance['itemtype'] . '|' . $maintenance['items_id'];
-}
-
 $token = Session::getNewCSRFToken();
 
 // Exibe o cabeçalho do GLPI
@@ -384,6 +360,10 @@ Html::header(
     'preventivemaintenance',
 );
 ?>
+
+<!-- Select2 para busca em dropdowns -->
+<!-- Select2 for dropdown search -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
 <!-- Estilos CSS para a interface -->
 <!-- CSS styles for interface -->
@@ -413,6 +393,13 @@ Html::header(
     /* Specific style for technician dropdown */
     select[name='technician_id'] {
         width: 100% !important;
+    }
+    /* Estilo para o select de entidades */
+    /* Style for entity dropdown */
+    #entities_id_select {
+        width: 100% !important;
+        padding: 8px 12px !important;
+        font-size: 14px !important;
     }
     .required {
         color: #dc3545;
@@ -513,62 +500,6 @@ Html::header(
         background: #45a049;
     }
     
-    /* Estilos para o modal de seleção de perfis */
-    /* Styles for profile selection modal */
-    .profile-modal {
-        display: none;
-        position: fixed;
-        z-index: 1000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0,0,0,0.4);
-    }
-    .profile-modal-content {
-        background-color: #fefefe;
-        margin: 10% auto;
-        padding: 20px;
-        border: 1px solid #888;
-        width: 50%;
-        border-radius: 5px;
-        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
-    }
-    .profile-modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    .profile-modal-title {
-        font-size: 1.2em;
-        font-weight: bold;
-    }
-    .profile-modal-close {
-        color: #aaa;
-        font-size: 28px;
-        font-weight: bold;
-        cursor: pointer;
-    }
-    .profile-modal-close:hover {
-        color: black;
-    }
-    .profile-checkboxes {
-        max-height: 400px;
-        overflow-y: auto;
-        margin-bottom: 20px;
-    }
-    .profile-checkbox-item {
-        margin-bottom: 10px;
-    }
-    .profile-modal-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-    }
-    .select-profile-btn {
-        margin-bottom: 15px;
-    }
 </style>
 
 <!-- HTML principal do formulário -->
@@ -593,27 +524,17 @@ Html::header(
                 <!-- STEP 1 - Somente seleção da entidade -->
                 <!-- STEP 1 - Only entity selection -->
                 <div id='step1'>
-                    <!-- Botão para selecionar perfis técnicos -->
-                    <!-- Button to select technician profiles -->
-                    <div class="select-profile-btn">
-                        <button type="button" id="selectProfilesBtn" class="btn btn-info">
-                            <i class="fas fa-user-cog me-2"></i><?php echo __('Selecionar Perfis Técnicos'); ?>
-                        </button>
-                        <small class="text-muted d-block mt-1"><?php echo __('Perfis selecionados: ') . implode(', ', $selected_profiles); ?></small>
-                    </div>
-                    
                     <div class='form-section'>
-                        <label for='entities_id_search'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
-                        <input type='text' id='entities_id_search' class='form-control' list='entities_datalist'
-                               autocomplete='off' placeholder='<?php echo __('Digite para buscar uma entidade'); ?>'
-                               value="<?php echo $is_edit ? htmlspecialchars(array_search((int) $item_data['entities_id'], $entities_name_to_id, true) ?: '') : ''; ?>">
-                        <datalist id='entities_datalist'>
-                            <?php foreach ($entities as $ent) {
-                                echo "<option value='" . htmlspecialchars($ent['completename']) . "'></option>";
-                            } ?>
-                        </datalist>
-                        <input type='hidden' id='entities_id_select' value="<?php echo $is_edit ? (int) $item_data['entities_id'] : ''; ?>">
-                        <small class="text-muted d-block mt-1" id="entities_id_search_feedback"></small>
+                        <label for='entities_id_select'><?php echo __('Entidade'); ?> <span class='required'>*</span></label>
+                        <select id='entities_id_select' name='entities_id' class='form-select' style='width: 100%;'>
+                            <option value=''><?php echo __('Selecione uma entidade'); ?></option>
+                            <?php
+                            foreach ($entities as $ent) {
+                                $selected = ($is_edit && $ent['id'] == $item_data['entities_id']) ? 'selected' : '';
+                                echo "<option value='{$ent['id']}' {$selected}>{$ent['completename']}</option>";
+                            }
+?>
+                        </select>
                     </div>
                     
                     <div class='d-flex justify-content-end mt-4'>
@@ -645,12 +566,15 @@ Html::header(
                         <select name='technician_id' id='technician_id' class='form-select'>
                             <option value=''><?php echo __('Selecione um técnico responsável'); ?></option>
                             <?php
-                            foreach ($technicians as $id => $name) {
-                                $selected = ($is_edit && $item_data['technician_id'] == $id) ? 'selected' : '';
-                                echo "<option value='{$id}' {$selected}>{$name}</option>";
-                            }
+foreach ($technicians as $id => $name) {
+    $selected = ($is_edit && $item_data['technician_id'] == $id) ? 'selected' : '';
+    echo "<option value='{$id}' {$selected}>{$name}</option>";
+}
 ?>
                         </select>
+                        <small class="text-muted d-block mt-1">
+                            <?php echo __('Perfis considerados técnico são configurados uma única vez em Configurações, no painel principal.'); ?>
+                        </small>
                     </div>
 
                     <div class='form-section'>
@@ -766,39 +690,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     </div>
                 </div>
             </form>
-            
-            <!-- Modal para seleção de perfis técnicos -->
-            <!-- Modal for technician profiles selection -->
-            <div id="profileModal" class="profile-modal">
-                <div class="profile-modal-content">
-                    <div class="profile-modal-header">
-                        <div class="profile-modal-title"><?php echo __('Selecionar Perfis Técnicos'); ?></div>
-                        <span class="profile-modal-close">&times;</span>
-                    </div>
-                    <form method="post" id="profileSelectionForm">
-                        <?php echo Html::hidden('_glpi_csrf_token', ['value' => $token]); ?>
-                        <input type="hidden" name="save_selected_profiles" value="1">
-                        
-                        <div class="profile-checkboxes">
-                            <?php foreach ($all_profiles as $prof): ?>
-                                <div class="profile-checkbox-item">
-                                    <label>
-                                        <input type="checkbox" name="profiles[]" value="<?php echo $prof['name']; ?>"
-                                            <?php echo in_array($prof['name'], $selected_profiles) ? 'checked' : ''; ?>>
-                                        <?php echo $prof['name']; ?>
-                                    </label>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                        
-                        <div class="profile-modal-footer">
-                            <button type="button" class="btn btn-secondary" id="cancelProfileSelection"><?php echo __('Cancelar'); ?></button>
-                            <button type="submit" class="btn btn-primary"><?php echo __('Salvar Seleção'); ?></button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            
+
             <!-- Inclusão de bibliotecas JavaScript -->
             <!-- JavaScript libraries inclusion -->
             <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -809,28 +701,51 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
             <!-- JavaScript script for form functionalities -->
             <script>
             const itemsData = <?php echo json_encode(array_values($all_items)); ?>;
-            const blockedItems = <?php echo json_encode($blocked_items); ?>;
-            const currentEditItemtype = <?php echo json_encode($is_edit ? $item_data['itemtype'] : null); ?>;
-            const currentEditItemsId = <?php echo json_encode($is_edit ? (int) $item_data['items_id'] : null); ?>;
-            const entitiesNameToId = <?php echo json_encode($entities_name_to_id, JSON_UNESCAPED_UNICODE); ?>;
-            
+
             $(document).ready(function() {
-                // Campo de busca de entidade: resolve o texto digitado (que precisa
-                // bater exatamente com uma opção da lista de sugestões nativa do
-                // navegador) para o ID correspondente, guardado no campo oculto.
-                // Entity search field: resolves the typed text (which must match
-                // exactly one of the browser's native suggestion list options) to
-                // the corresponding ID, stored in the hidden field.
-                $('#entities_id_search').on('input change', function() {
-                    const typed = $(this).val();
-                    const feedback = $('#entities_id_search_feedback');
-                    if (entitiesNameToId.hasOwnProperty(typed)) {
-                        $('#entities_id_select').val(entitiesNameToId[typed]);
-                        feedback.text('');
-                    } else {
-                        $('#entities_id_select').val('');
-                        feedback.text(typed ? '<?php echo __('Selecione uma entidade da lista de sugestões.'); ?>' : '');
-                    }
+
+                // Inicializa Select2 em todos os dropdowns com busca integrada
+                // Initialize Select2 on all dropdowns with integrated search
+                $('#entities_id_select').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar entidade...'); ?>',
+                    allowClear: true,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#technician_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar técnico...'); ?>',
+                    allowClear: true,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#groups_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar grupo...'); ?>',
+                    allowClear: false,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#itemtype').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar tipo de item...'); ?>',
+                    allowClear: false,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#items_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar item...'); ?>',
+                    allowClear: false,
+                    minimumResultsForSearch: 0
+                });
+
+                $('#tickettemplates_id').select2({
+                    language: 'pt-BR',
+                    placeholder: '<?php echo __('Buscar ou selecionar modelo de chamado...'); ?>',
+                    allowClear: true,
+                    minimumResultsForSearch: 0
                 });
 
                 // Configuração de localização para português
@@ -959,7 +874,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     // Se estiver editando, configura os valores iniciais
                     // If editing, sets initial values
                     const entityId = <?php echo $item_data['entities_id']; ?>;
-                    const entityName = $('#entities_id_search').val();
+                    const entityName = $('#entities_id_select option:selected').text();
 
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
@@ -974,11 +889,11 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                 $('#nextButton').click(function() {
                     const entityId = $('#entities_id_select').val();
                     if (!entityId) {
-                        alert('<?php echo __("Selecione uma entidade válida da lista de sugestões"); ?>');
+                        alert('<?php echo __("Selecione uma entidade válida"); ?>');
                         return;
                     }
 
-                    const entityName = $('#entities_id_search').val();
+                    const entityName = $('#entities_id_select option:selected').text();
 
                     $('#entities_id').val(entityId);
                     $('#selected-entity-name').text('Entidade: ' + entityName);
@@ -1024,12 +939,7 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                     select.find('option').not(':first').remove();
 
                     const filteredItems = itemsData.filter(item => {
-                        if (item.itemtype !== itemtype || item.entities_id != entityId) {
-                            return false;
-                        }
-                        const key = item.itemtype + '|' + item.id;
-                        const isCurrentEditItem = (currentEditItemtype === item.itemtype && currentEditItemsId === item.id);
-                        return !blockedItems.includes(key) || isCurrentEditItem;
+                        return item.itemtype === itemtype && item.entities_id == entityId;
                     });
 
                     if (filteredItems.length > 0) {
@@ -1042,63 +952,12 @@ echo "<option value='custom' {$selected}>" . __('Personalizado') . "</option>";
                         select.append(option);
                     }
                 }
-                
-                // ==============================================
-                // CÓDIGO PARA O BOTÃO DE SELEÇÃO DE PERFIS TÉCNICOS
-                // CODE FOR TECHNICIAN PROFILES SELECTION BUTTON
-                // ==============================================
-                
-                // Abre o modal de seleção de perfis
-                // Opens profile selection modal
-                $('#selectProfilesBtn').click(function() {
-                    $('#profileModal').show();
-                });
-                
-                // Fecha o modal quando clica no X
-                // Closes modal when clicking X
-                $('.profile-modal-close').click(function() {
-                    $('#profileModal').hide();
-                });
-                
-                // Fecha o modal quando clica em Cancelar
-                // Closes modal when clicking Cancel
-                $('#cancelProfileSelection').click(function() {
-                    $('#profileModal').hide();
-                });
-                
-                // Fecha o modal quando clica fora da área de conteúdo
-                // Closes modal when clicking outside content area
-                $(window).click(function(event) {
-                    if (event.target == $('#profileModal')[0]) {
-                        $('#profileModal').hide();
-                    }
-                });
-                
-                // Processa o formulário de seleção de perfis. Envio nativo (sem
-                // AJAX) — o GLPI 11 valida o token CSRF de um jeito diferente
-                // para requisições AJAX (header em vez do campo do formulário),
-                // que o $.ajax() abaixo não enviava, sempre resultando em 403.
-                // O formulário principal já funciona via POST normal, então
-                // seguimos o mesmo caminho aqui.
-                // Processes profile selection form. Native submit (no AJAX) —
-                // GLPI 11 validates the CSRF token differently for AJAX requests
-                // (a header instead of the form field), which the $.ajax() below
-                // never sent, always resulting in a 403. The main form already
-                // works via a normal POST, so we follow the same path here.
-                $('#profileSelectionForm').submit(function(e) {
-                    // Verifica se pelo menos um perfil foi selecionado
-                    // Checks if at least one profile was selected
-                    if ($('#profileSelectionForm input[name="profiles[]"]:checked').length === 0) {
-                        e.preventDefault();
-                        alert('<?php echo __("Selecione pelo menos um perfil técnico"); ?>');
-                    }
-                    // Caso contrário, deixa o navegador enviar o formulário
-                    // normalmente (POST + reload da página).
-                    // Otherwise, let the browser submit the form normally
-                    // (POST + page reload).
-                });
             });
             </script>
+
+            <!-- Select2 script para busca em dropdown -->
+            <!-- Select2 script for dropdown search -->
+            <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         </div>
     </div>
 
