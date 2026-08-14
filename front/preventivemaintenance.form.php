@@ -241,25 +241,6 @@ if (isset($_POST['add'])) {
             throw new Exception(__('Grupo selecionado não encontrado.'));
         }
 
-        // Verifica se já existe manutenção para este item (mesmo tipo + mesmo id)
-        // Checks if maintenance already exists for this item (same type + same id)
-        $existing = $pm->find([
-            'items_id' => $items_id,
-            'itemtype' => $itemtype,
-        ]);
-
-        if ($is_edit) {
-            unset($existing[$id]);
-        }
-
-        if (count($existing) > 0) {
-            throw new Exception(sprintf(
-                __('Já existe uma manutenção cadastrada para o item %s (ID: %d)'),
-                $item->getName(),
-                $items_id,
-            ));
-        }
-
         // Resolve o valor de recorrência: "custom" usa o campo de quantidade
         // personalizada de meses em vez de um preset fixo.
         // Resolves the recurrence value: "custom" uses the custom month-count
