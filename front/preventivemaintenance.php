@@ -223,6 +223,18 @@ if (isset($_POST['generate_ticket'])) {
         Html::redirect('preventivemaintenance.php');
     }
 
+    // Verifica antecipadamente se já existe um chamado aberto, para dar uma
+    // mensagem específica em vez do erro genérico de falha (createMaintenanceTicket()
+    // recusa silenciosamente nesse caso, sem logar nada — não é uma falha real).
+    // Checks upfront whether a ticket is already open, to give a specific
+    // message instead of the generic failure error (createMaintenanceTicket()
+    // silently refuses in this case, without logging anything — it's not a
+    // real failure).
+    if (hasOpenMaintenanceTicket($maintenance_id)) {
+        Session::addMessageAfterRedirect(__('Já existe um chamado aberto para esta manutenção.'), false, WARNING);
+        Html::redirect('preventivemaintenance.php');
+    }
+
     // Chama a função para criar o chamado manualmente com os dados da manutenção
     try {
         $result = createMaintenanceTicket(
