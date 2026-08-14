@@ -552,7 +552,7 @@ Html::header(
                                 $selected = ($is_edit && $ent['id'] == $item_data['entities_id']) ? 'selected' : '';
                                 echo "<option value='{$ent['id']}' {$selected}>{$ent['completename']}</option>";
                             }
-                            ?>
+?>
                         </select>
                     </div>
                     
@@ -585,10 +585,10 @@ Html::header(
                         <select name='technician_id' id='technician_id' class='form-select'>
                             <option value=''><?php echo __('Selecione um técnico responsável'); ?></option>
                             <?php
-                            foreach ($technicians as $id => $name) {
-                                $selected = ($is_edit && $item_data['technician_id'] == $id) ? 'selected' : '';
-                                echo "<option value='{$id}' {$selected}>{$name}</option>";
-                            }
+foreach ($technicians as $id => $name) {
+    $selected = ($is_edit && $item_data['technician_id'] == $id) ? 'selected' : '';
+    echo "<option value='{$id}' {$selected}>{$name}</option>";
+}
 ?>
                         </select>
                         <small class="text-muted d-block mt-1">

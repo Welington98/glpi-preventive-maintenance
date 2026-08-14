@@ -232,7 +232,7 @@ if (isset($_POST['generate_ticket'])) {
             $pm->fields['name'],
             $pm->fields['technician_id'],
             $pm->fields['tickettemplates_id'],
-            $pm->fields['groups_id']
+            $pm->fields['groups_id'],
         );
 
         if ($result) {
